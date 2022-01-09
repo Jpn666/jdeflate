@@ -15,7 +15,7 @@ compressfile(FILE* ihandler, FILE* ohandler)
 	uintxx ocount;
 	TDeflator* state;
 	
-	state = deflator_create(0);
+	state = deflator_create(9);
 	if (state == NULL) {
 		return 0;
 	}

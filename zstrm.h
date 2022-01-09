@@ -94,12 +94,11 @@ uintxx zstrm_r(TZStrm*, uint8* buffer, uintxx size);
 uintxx zstrm_w(TZStrm*, uint8* buffer, uintxx size);
 
 /*
- * Used in mode=ZSTRM_WMODE to flush the output. */
+ *  */
 bool zstrm_flush(TZStrm*);
 
 /*
- * When the stream is created using ZSTRM_WMODE this function is used to flush
- * and end the stream (will return false in case of error). */
+ * */
 bool zstrm_endstream(TZStrm*);
 
 /*

@@ -286,6 +286,7 @@ checktail(struct TZStrm* state)
 		return 0;
 	}
 	else {
+		
 		if (crc32 != state->crc32) {
 			SETERROR(ZSTRM_ECHECKSUM);
 			return 0;
@@ -355,7 +356,8 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 					return 0;
 				}
 				
-				state->send = state->sbgn + r;
+				state->source = state->send = state->sbgn;
+				state->send  += r;
 				inflator_setsrc(state->infltr, state->sbgn, r);
 			}
 			else {
@@ -367,10 +369,10 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 		else {
 			if (UNLIKELY(sresult == INFLT_OK)) {
 				/* end of the stream */
-				state->source = state->sbgn + inflator_srcend(state->infltr);
-				CRC32_FINALIZE(state->crc32);
-
+				state->source += inflator_srcend(state->infltr);
+				
 				if (state->smode == ZSTRM_GZIP) {
+					CRC32_FINALIZE(state->crc32);
 					if (checktail(state) == 0) {
 						SETSTATE(ZSTRM_BADSTATE);
 						return 0;
@@ -384,7 +386,7 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 		inflator_settgt(state->infltr, state->tbgn, ZIOBFFRSZ);
 		sresult = inflator_inflate(state->infltr, 0);
 		n = inflator_tgtend(state->infltr);
-
+		
 		target = tend = state->tbgn;
 		tend  += n;
 
