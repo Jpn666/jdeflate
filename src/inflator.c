@@ -1159,8 +1159,10 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 static uintxx decodefast(struct TInflator* state);
 
 
-#pragma warning(push)
-#pragma warning(disable: 4702)
+#if defined(__MSVC__)
+	#pragma warning(push)
+	#pragma warning(disable: 4702)
+#endif
 
 static uintxx
 decodeblck(struct TInflator* state)
@@ -1384,7 +1386,9 @@ L_STATE4:
 	return 0;
 }
 
-#pragma warning(pop)
+#if defined(__MSVC__)
+	#pragma warning(pop)
+#endif
 
 
 #define GETBITS(BUFFER, N) ((BBTYPE) (BUFFER) & ((((BBTYPE) 1UL) << (N)) - 1))
