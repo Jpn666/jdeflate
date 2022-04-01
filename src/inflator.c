@@ -17,21 +17,25 @@
 #include "../inflator.h"
 
 
+#if defined(AUTOINCLUDE_1)
+
 /* deflate format definitions */
 #define DEFLT_MAXBITS    15
 #define DEFLT_WINDOWSZ   32768
 
-#define DEFLT_LMAXSYMBOL 288
-#define DEFLT_DMAXSYMBOL 32
-#define DEFLT_CMAXSYMBOL 19
-
-
 #define WNDWSIZE DEFLT_WINDOWSZ
+
+
+#else
 
 /* root bits for main tables */
 #define LROOTBITS 9
 #define DROOTBITS 7
 #define CROOTBITS 7
+
+#define DEFLT_LMAXSYMBOL 288
+#define DEFLT_DMAXSYMBOL 32
+#define DEFLT_CMAXSYMBOL 19
 
 
 /* these values were calculated using enough in zlib/examples, if the
@@ -79,8 +83,8 @@ struct TINFLTTPrvt {
 		/* */
 		struct TINFLTTEntry {
 			/* the symbol if it's a literal, a distance or length base
-			 * value, or a subtable offset if the code length is larger than
-			 * rootbits */
+			* value, or a subtable offset if the code length is larger than
+			* rootbits */
 			uint16 info;
 			
 			/* extra bits or tag */
@@ -97,6 +101,10 @@ struct TINFLTTPrvt {
 	*tables;
 };
 
+#endif
+
+
+#if defined(AUTOINCLUDE_1)
 
 #define PRVT ((struct TINFLTTPrvt*) state)
 
@@ -648,10 +656,6 @@ updatewindow(struct TInflator* state)
 }
 
 
-static const struct TINFLTTEntry lsttctable[1L << LROOTBITS];
-static const struct TINFLTTEntry dsttctable[1L << DROOTBITS];
-
-
 static uintxx decodeblck(struct TInflator* state);
 
 static uintxx decodestrd(struct TInflator* state);
@@ -707,7 +711,7 @@ L_DECODE:
 			
 			/* stored */
 			case 1: {
-				if (LIKELY(r = decodestrd(state))) {
+				if (LIKELY((r = decodestrd(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
 						return INFLT_ERROR;
@@ -729,7 +733,7 @@ L_DECODE:
 			
 			/* dynamic */
 			case 3: {
-				if (LIKELY(r = decodednmc(state))) {
+				if (LIKELY((r = decodednmc(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
 						return INFLT_ERROR;
@@ -1154,6 +1158,10 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 
 static uintxx decodefast(struct TInflator* state);
 
+
+#pragma warning(push)
+#pragma warning(disable: 4702)
+
 static uintxx
 decodeblck(struct TInflator* state)
 {
@@ -1375,6 +1383,8 @@ L_STATE4:
 
 	return 0;
 }
+
+#pragma warning(pop)
 
 
 #define GETBITS(BUFFER, N) ((BBTYPE) (BUFFER) & ((((BBTYPE) 1UL) << (N)) - 1))
@@ -1600,6 +1610,7 @@ L_DONE:
 
 #undef PRVT
 
+#else
 
 /* ****************************************************************************
  * Static Tables
@@ -1824,3 +1835,10 @@ static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
 	{0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05}, {0x0c01, 0x0a, 0x05},
 	{0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05}
 };
+
+
+#define AUTOINCLUDE_1
+#include __FILE__
+#undef  AUTOINCLUDE_1
+
+#endif

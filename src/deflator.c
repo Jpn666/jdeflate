@@ -17,18 +17,22 @@
 #include "../deflator.h"
 
 
+#if defined(AUTOINCLUDE_1)
+
 /* deflate format definitions */
 #define DEFLT_MAXBITS       15
 #define DEFLT_PCODESMAXBITS 7
 #define DEFLT_WINDOWSZ      32768
 
+
+#else
+
 #define DEFLT_LMAXSYMBOL 288
 #define DEFLT_DMAXSYMBOL 32
 #define DEFLT_CMAXSYMBOL 19
 
-
 #define WNDWBITS 15
-#define WNDWSIZE DEFLT_WINDOWSZ
+#define WNDWSIZE 32768
 
 /* cache size */
 #define SMASK ((WNDWSIZE << 1) - 1)
@@ -151,6 +155,10 @@ struct TDEFLTPrvt {
 	*extra;
 };
 
+#endif
+
+
+#if defined(AUTOINCLUDE_1)
 
 /* window buffer size | lz buffer size */
 #define BUILDMEMINFO(A, B) (((A) << 0x08) | ((B) << 0x00))
@@ -213,11 +221,6 @@ setparameters(struct TDeflator* state, uintxx level)
 	PRVT->mininsert = lazy;
 	PRVT->maxchain  = chain;
 }
-
-/* predefined static encoding tables */
-static const struct THCode1 slitcodes[MAXLTCODES];
-static const struct THCode2 slnscodes[MAXLZCODES];
-static const struct THCode2 sdstcodes[MAXLZCODES];
 
 
 CTB_INLINE uintxx
@@ -2320,6 +2323,7 @@ L_LOOP:
 #undef SETERROR
 #undef PRVT
 
+#else
 
 /* ****************************************************************************
  * Static Tables
@@ -2450,3 +2454,9 @@ static const struct THCode2 sdstcodes[MAXLZCODES] = {
 	{0x05, 0x0d, 0x0007, 0x4001}, {0x05, 0x0d, 0x0017, 0x6001}
 };
 
+
+#define AUTOINCLUDE_1
+#include __FILE__
+#undef  AUTOINCLUDE_1
+
+#endif
