@@ -599,7 +599,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 			
 			/* fallthrough */
 			case 1: {
-				if ((r = flushblck(state))) {
+				if ((r = flushblck(state)) != 0) {
 					return r;
 				}
 				
@@ -726,10 +726,10 @@ L_STATE2:
 		a = (uint16)  PRVT->aux1;
 		b = (uint16) ~PRVT->aux1;
 		if (targetleft >= 4) {
-			*state->target++ = a >> 0x00;
-			*state->target++ = a >> 0x08;
-			*state->target++ = b >> 0x00;
-			*state->target++ = b >> 0x08;
+			*state->target++ = (uint8) (a >> 0x00);
+			*state->target++ = (uint8) (a >> 0x08);
+			*state->target++ = (uint8) (b >> 0x00);
+			*state->target++ = (uint8) (b >> 0x08);
 			targetleft += PRVT->aux2 = 4;
 		}
 		else {
@@ -2113,7 +2113,7 @@ L_LOOP:
 	while (LIKELY(limit > PRVT->cursor)) {
 		uintxx lsymbol;
 		uintxx dsymbol;
-		uint32 hash;
+		uint16 hash;
 		uint32 head;
 		
 		head = GETSHEAD3(PRVT->window, PRVT->cursor);
@@ -2227,7 +2227,7 @@ L_LOOP:
 	}
 
 	while (LIKELY(limit > PRVT->cursor)) {
-		uint32 hash;
+		uint16 hash;
 		uint32 head;
 		
 		for (;;) {
