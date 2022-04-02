@@ -673,7 +673,7 @@ inflator_inflate(TInflator* state, uintxx final)
 	PRVT->used = 1;
 	if (LIKELY(state->state == 5)) {
 L_DECODE:
-		if (LIKELY(r = decodeblck(state))) {
+		if (LIKELY((r = decodeblck(state)) != 0)) {
 			if (state->finalinput && r == INFLT_SRCEXHSTD) {
 				SETERROR(INFLT_EINPUTEND);
 				return INFLT_ERROR;
