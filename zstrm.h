@@ -68,10 +68,8 @@ typedef struct TZStrm TZStrm;
 
 /*
  * Creates a new stream. If mode is ZSTRM_WMODE then it's posible to set
- * the compression level by adding the desired level (0 to 9) to the mode
- * eg:
- * stream = zstrm_create(ZSTRM_WMODE + 6, ZSTRM_GZIP); */
-TZStrm* zstrm_create(eZSTRMMode mode, eZSTRMType strmtype);
+ * the compression level (0-9), level is ignored if mode is ZSTRM_RMODE */
+TZStrm* zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level);
 
 /*
  * */

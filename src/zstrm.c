@@ -55,16 +55,22 @@ struct TZStrm {
 
 
 TZStrm*
-zstrm_create(eZSTRMMode mode, eZSTRMType strmtype)
+zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
 {
 	struct TZStrm* state;
 	
-	if (mode != ZSTRM_RMODE) {
-		if (mode > 10) {
+	if (mode == ZSTRM_WMODE) {
+		if (level > 9) {
 			/* invalid compression level */
 			return NULL;
 		}
 	}
+	else {
+		if (mode != ZSTRM_RMODE) {
+			return NULL;
+		}
+	}
+
 	if (strmtype != ZSTRM_GZIP && strmtype != ZSTRM_DEFLATE) {
 		if (strmtype == ZSTRM_AUTO) {
 			if (mode != ZSTRM_RMODE) {
@@ -99,7 +105,7 @@ zstrm_create(eZSTRMMode mode, eZSTRMType strmtype)
 		}
 	}
 	else {
-		state->defltr = deflator_create((state->level = (uintxx) mode - 1));
+		state->defltr = deflator_create((state->level = level));
 		if (state->defltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;

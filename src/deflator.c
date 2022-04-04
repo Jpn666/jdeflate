@@ -1845,7 +1845,7 @@ getmatchlength(uint8* p1, uint8* p2, uint8* end)
 
 #else
 
-FORCE_INLINE uintxx
+CTB_FORCEINLINE uintxx
 getmatchlength(uint8* p1, uint8* p2, uint8* end)
 {
 	uint8* pp;
