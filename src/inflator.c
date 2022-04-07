@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2020, jpn 
- * 
+ * Copyright (C) 2020, jpn
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -86,16 +86,16 @@ struct TINFLTTPrvt {
 			* value, or a subtable offset if the code length is larger than
 			* rootbits */
 			uint16 info;
-			
+
 			/* extra bits or tag */
-			uint8 etag; 
+			uint8 etag;
 			uint8 length;   /* length of the code */
 		}
 		symbols[
 			ENOUGHL +
 			ENOUGHD
 		];
-		
+
 		uint16 lengths[DEFLT_LMAXSYMBOL + DEFLT_DMAXSYMBOL];
 	}
 	*tables;
@@ -112,16 +112,16 @@ TInflator*
 inflator_create(void)
 {
 	struct TInflator* state;
-	
+
 	state = CTB_MALLOC(sizeof(struct TINFLTTPrvt));
 	if (state == NULL) {
 		return NULL;
 	}
-	
+
 	PRVT->window = NULL;
 	PRVT->tables = NULL;
 	inflator_reset(state);
-	
+
 	return state;
 }
 
@@ -129,7 +129,7 @@ void
 inflator_reset(TInflator* state)
 {
 	ASSERT(state);
-	
+
 	/* public fields */
 	state->state = 0;
 	state->error = 0;
@@ -164,15 +164,16 @@ inflator_reset(TInflator* state)
 void
 inflator_destroy(TInflator* state)
 {
-	if (state == NULL)
+	if (state == NULL) {
 		return;
-	
+	}
+
 	if (PRVT->window)
 		CTB_FREE(PRVT->window);
-	
+
 	if (PRVT->tables)
 		CTB_FREE(PRVT->tables);
-	
+
 	CTB_FREE(state);
 }
 
@@ -185,27 +186,27 @@ reversecode(uint16 code, uintxx length)
 	uintxx a;
 	uintxx b;
 	uintxx r;
-	
+
 	static const uint8 rtable[] = {
 		0x00, 0x08, 0x04, 0x0c,
 		0x02, 0x0a, 0x06, 0x0e,
 		0x01, 0x09, 0x05, 0x0d,
 		0x03, 0x0b, 0x07, 0x0f
 	};
-	
+
 	if (length > 8) {
 		a = (uint8) (code >> 0);
 		b = (uint8) (code >> 8);
 		a = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
 		b = rtable[b >> 4] | (rtable[b & 0x0f] << 4);
-		
+
 		r = b | (a << 8);
 		return (uint16) (r >> (0x10 - length));
 	}
-	
+
 	a = (uint8) code;
 	r = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-	
+
 	return (uint16) (r >> (0x08 - length));
 }
 
@@ -252,10 +253,10 @@ clzero24(uint32 n)
 	uintxx r;
 	uintxx a;
 	uintxx b;
-	
+
 	a = clztable[(uint8) (n >> 0x18)];
 	b = clztable[(uint8) (n >> 0x10)];
-	
+
 	if (a == 0x08) {
 		r = a + b;
 		if (r == 0x10)
@@ -271,9 +272,9 @@ reverseinc(uint16 n, uintxx length)
 {
 	uintxx offset;
 	uintxx s;
-	
+
 	n <<= (offset = 0x10 - length);
-	
+
 	if ((s = 0x8000 >> clzero24(~n << 16)) == 0) {
 		return 0;
 	}
@@ -355,7 +356,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 
 	uint16 counts[DEFLT_MAXBITS + 1];
 	uint16 ncodes[DEFLT_MAXBITS + 1];
-	
+
 	sinfo = dstinfo;
 	switch (mode) {
 		case LTABLEMODE: mbits = LROOTBITS; sinfo = lnsinfo - 256; break;
@@ -363,17 +364,17 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		default:
 			mbits = CROOTBITS;
 	}
-	
+
 	for (i = 0; i <= DEFLT_MAXBITS; i++) {
 		counts[i] = 0;
 		ncodes[i] = 0;
 	}
-	
+
 	/* count the number of lengths for each length */
 	i = n - 1;
 	while(i >= 0)
 		counts[lengths[i--]] += 1;
-	
+
 	if (counts[0] == n) {
 		/* RFC:
 		 * One distance code of zero bits means that there are no distance
@@ -391,20 +392,20 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		/* we need at least one symbol (256) for literal-length codes */
 		return INFLT_ERROR;
 	}
-	
+
 	counts[0] = 0;
-	
+
 	/* get the longest length */
 	i = DEFLT_MAXBITS;
 	while (counts[i] == 0)
 		i--;
 	mlen = i;
-	
+
 	/* check for vality */
 	left = 1;
 	for (i = 1; i <= DEFLT_MAXBITS; i++) {
 		left = (left << 1) - counts[i];
-		
+
 		if (left < 0) {
 			/* over subscribed */
 			return INFLT_ERROR;
@@ -428,7 +429,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		ncodes[i] = reversecode(code, i);
 	}
 	mmask = ((uintxx) 1 << mbits) - 1;
-	
+
 	if (mlen > mbits) {
 		uintxx count;
 		uintxx offset;
@@ -445,7 +446,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 			if (count == 0) {
 				continue;
 			}
-			
+
 			code = ncodes[mbits + r] & mmask;
 			j = count >> r;
 			if (count & (((uintxx) 1 << r) - 1))
@@ -476,14 +477,14 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 			}
 		}
 	}
-	
+
 	/* populate the table */
 	code = 0;
 	for (symbol = 0; symbol < n; symbol++) {
 		struct TINFLTTEntry e;
-		
+
 		length = lengths[symbol];
-		if (length == 0){ 
+		if (length == 0){
 			continue;
 		}
 
@@ -496,7 +497,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 			e.etag = LITERALSYMBOL;
 		}
 		e.length = (uint8) length;
-		
+
 		code = ncodes[length];
 		ncodes[length] = reverseinc(code, length);
 		if (length > (uintxx) mbits) {
@@ -512,7 +513,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 			j = mbits - length;
 			i = 0;
 		}
-		
+
 		for (j = ((uintxx) 1 << j) - 1; j >= 0; j--) {
 			table[i + (code | (j << length))] = e;
 		}
@@ -524,10 +525,10 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 	 * unused code. */
 	if (mlen == 1 && code == 0) {
 		code = 1;
-		
+
 		for (j = ((uintxx) 1 << (mbits - 1)) - 1; j >= 0; j--) {
 			entry = table + (code | (j << 1));
-			
+
 			entry->info = 0xffff;
 			entry->etag = INVALIDCODE;
 			entry->length = 15;
@@ -540,7 +541,7 @@ CTB_INLINE uintxx
 setuptables(struct TInflator* state)
 {
 	struct TTINFLTTables* tables;
-	
+
 	if (PRVT->tables == NULL) {
 		tables = CTB_MALLOC(sizeof(struct TTINFLTTables));
 		if (tables == NULL) {
@@ -592,7 +593,7 @@ CTB_FORCEINLINE void
 dropbits(struct TInflator* state, uintxx n)
 {
 	PRVT->bbuffer = PRVT->bbuffer >> n;
-	PRVT->bcount -= n; 
+	PRVT->bcount -= n;
 }
 
 CTB_FORCEINLINE uintxx
@@ -608,28 +609,28 @@ updatewindow(struct TInflator* state)
 	uintxx maxrun;
 	uint8* begin;
 	uint8* buffer;
-	
+
 	total = (uintxx) (state->target - state->tbgn);
 	if (total == 0) {
 		return 0;
 	}
-	
+
 	if (total > WNDWSIZE) {
 		total = WNDWSIZE;
 	}
 	begin = state->target - total;
-	
+
 	/* allocate the window buffer */
 	if (UNLIKELY(PRVT->window == NULL)) {
 		buffer = CTB_MALLOC(WNDWSIZE);
-		
+
 		if (buffer == NULL) {
 			SETERROR(INFLT_EOOM);
 			return INFLT_ERROR;
 		}
 		PRVT->window = buffer;
 	}
-	
+
 	if (PRVT->count < WNDWSIZE) {
 		uintxx bytes;
 
@@ -638,12 +639,12 @@ updatewindow(struct TInflator* state)
 			bytes = WNDWSIZE;
 		PRVT->count = bytes;
 	}
-	
+
 	maxrun = WNDWSIZE - PRVT->end;
 	if (total < maxrun)
 		maxrun = total;
 	memcpy(PRVT->window + PRVT->end, begin, maxrun);
-	
+
 	total -= maxrun;
 	if (total) {
 		memcpy(PRVT->window, begin + maxrun, total);
@@ -665,7 +666,7 @@ eINFLTResult
 inflator_inflate(TInflator* state, uintxx final)
 {
 	uintxx r;
-	
+
 	if (UNLIKELY(state->finalinput == 0 && final)) {
 		state->finalinput = 1;
 	}
@@ -682,7 +683,7 @@ L_DECODE:
 		}
 		state->state = 0;
 	}
-	
+
 	for (;;) {
 		switch (state->state) {
 			case 0: {
@@ -690,14 +691,14 @@ L_DECODE:
 					state->state = INFLT_BADSTATE;
 					return INFLT_OK;
 				}
-				
+
 				if (tryreadbits(state, 3)) {
 					PRVT->final  = getbits(state, 1); dropbits(state, 1);
 					state->state = getbits(state, 2); dropbits(state, 2);
 					state->state++;
 					continue;
 				}
-				
+
 				if (state->finalinput) {
 					SETERROR(INFLT_EINPUTEND);
 					return INFLT_ERROR;
@@ -705,10 +706,10 @@ L_DECODE:
 				if (updatewindow(state)) {
 					return INFLT_ERROR;
 				}
-				
+
 				return INFLT_SRCEXHSTD;
 			}
-			
+
 			/* stored */
 			case 1: {
 				if (LIKELY((r = decodestrd(state)) != 0)) {
@@ -721,7 +722,7 @@ L_DECODE:
 				state->state = 0;
 				continue;
 			}
-			
+
 			/* static */
 			case 2: {
 				PRVT->ltable = (void*) lsttctable;
@@ -730,7 +731,7 @@ L_DECODE:
 				state->state = 5;
 				goto L_DECODE;
 			}
-			
+
 			/* dynamic */
 			case 3: {
 				if (LIKELY((r = decodednmc(state)) != 0)) {
@@ -743,7 +744,7 @@ L_DECODE:
 				state->state = 5;
 				goto L_DECODE;
 			}
-			
+
 			case 4:
 				SETERROR(INFLT_EBADBLOCK);
 
@@ -752,7 +753,7 @@ L_DECODE:
 				goto L_ERROR;
 		}
 	}
-	
+
 L_ERROR:
 	if (state->error == 0) {
 		SETERROR(INFLT_EBADSTATE);
@@ -809,7 +810,7 @@ decodestrd(struct TInflator* state)
 		case 2: goto L_STATE2;
 		case 3: goto L_STATE3;
 	}
-	
+
 	if (tryreadbits(state, 8)) {
 		dropbits(state, PRVT->bcount & 7);
 	}
@@ -826,7 +827,7 @@ L_STATE1:
 	if (tryreadbits(state, 16)) {
 		uint8 a;
 		uint8 b;
-		
+
 		a = (uint8) getbits(state, 8); dropbits(state, 8);
 		b = (uint8) getbits(state, 8); dropbits(state, 8);
 		slength = a | (b << 8);
@@ -838,13 +839,13 @@ L_STATE1:
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
-	
+
 L_STATE2:
 	if (tryreadbits(state, 16)) {
 		uintxx nlength;
 		uint8 a;
 		uint8 b;
-		
+
 		a = (uint8) getbits(state, 8); dropbits(state, 8);
 		b = (uint8) getbits(state, 8); dropbits(state, 8);
 		nlength = a | (b << 8);
@@ -861,21 +862,21 @@ L_STATE2:
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
-	
+
 L_STATE3:
 	sourceleft = (uintxx) (state->send - state->source);
 	targetleft = (uintxx) (state->tend - state->target);
 	maxrun = slength;
-	
+
 	if (targetleft < maxrun)
 		maxrun = targetleft;
 	if (sourceleft < maxrun)
 		maxrun = sourceleft;
-	
+
 	memcpy(state->target, state->source, maxrun);
 	state->target += maxrun;
 	state->source += maxrun;
-	
+
 	slength -= maxrun;
 	if (slength) {
 		if (PRVT->final == 0) {
@@ -886,10 +887,10 @@ L_STATE3:
 		if ((targetleft - maxrun) == 0) {
 			return INFLT_TGTEXHSTD;
 		}
-		
+
 		return INFLT_SRCEXHSTD;
 	}
-	
+
 	PRVT->substate = 0;
 	return INFLT_OK;
 }
@@ -908,20 +909,20 @@ readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 	struct TINFLTTEntry e;
 	uintxx length;
 	uintxx replen;
-	
+
 	const uint8 sinfo[][2] = {
 		{0x02, 0x03},
 		{0x03, 0x03},
 		{0x07, 0x0b}
 	};
-	
+
 	while (scindex < n) {
 		for (;;) {
 			e = PRVT->ltable[getbits(state, CROOTBITS)];
 			if (e.length <= PRVT->bcount) {
 				break;
 			}
-			
+
 			if(fetchbyte(state) == 0) {
 				if (updatewindow(state)) {
 					return INFLT_ERROR;
@@ -929,19 +930,19 @@ readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 				return INFLT_SRCEXHSTD;
 			}
 		}
-		
+
 		if (e.info < 16) {
 			lengths[scindex++] = e.info;
 			dropbits(state, e.length);
 			continue;
 		}
-		
+
 		replen = sinfo[e.info - 16][1];
 		length = sinfo[e.info - 16][0];
-		
+
 		if (tryreadbits(state, e.length + length)) {
 			dropbits(state, e.length);
-			
+
 			replen += getbits(state, length);
 			dropbits(state, length);
 		}
@@ -949,10 +950,10 @@ readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			return INFLT_SRCEXHSTD;
 		}
-		
+
 		if (length == 2) {
 			if (scindex == 0) {
 				SETERROR(INFLT_EBADTREE);
@@ -963,16 +964,16 @@ readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 		else {
 			length = 0;
 		}
-		
+
 		if (scindex + replen > DEFLT_DMAXSYMBOL + DEFLT_LMAXSYMBOL) {
 			SETERROR(INFLT_EBADTREE);
 			return INFLT_ERROR;
 		}
-		
+
 		while (replen--)
 			lengths[scindex++] = (uint16) length;
 	}
-	
+
 	return 0;
 }
 
@@ -984,24 +985,24 @@ decodednmc(struct TInflator* state)
 	};
 	uintxx r;
 	uint16* lengths;
-	
+
 	switch (PRVT->substate) {
 		case 0:
 			break;
 		case 1: goto L_STATE1;
 		case 2: goto L_STATE2;
 	}
-	
+
 	r = setuptables(state);
 	if (r) {
 		return r;
 	}
-	
+
 	if (tryreadbits(state, 14)) {
 		slcount = getbits(state, 5) + 257; dropbits(state, 5);
 		sdcount = getbits(state, 5) +   1; dropbits(state, 5);
 		sccount = getbits(state, 4) +   4; dropbits(state, 4);
-		
+
 		if (slcount > 286 || sdcount > 30) {
 			SETERROR(INFLT_EBADTREE);
 			return INFLT_ERROR;
@@ -1011,12 +1012,12 @@ decodednmc(struct TInflator* state)
 		if (updatewindow(state)) {
 			return INFLT_ERROR;
 		}
-		
+
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
 	scindex = 0;
-	
+
 L_STATE1:
 	lengths = PRVT->tables->lengths;
 	for (; sccount > scindex; scindex++) {
@@ -1028,20 +1029,20 @@ L_STATE1:
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			return INFLT_SRCEXHSTD;
 		}
 	}
 	sccount = DEFLT_CMAXSYMBOL;
 	for (; sccount > scindex; scindex++)
 		lengths[lcorder[scindex]] = 0;
-	
+
 	r = buildtable(lengths, DEFLT_CMAXSYMBOL, PRVT->ltable, CTABLEMODE);
 	if (r) {
 		SETERROR(INFLT_EBADTREE);
 		return r;
 	}
-	
+
 	PRVT->substate++;
 	scindex = 0;
 
@@ -1051,7 +1052,7 @@ L_STATE2:
 	if (r) {
 		return r;
 	}
-	
+
 	if (lengths[256] == 0) {
 		SETERROR(INFLT_EBADTREE);
 		return INFLT_ERROR;
@@ -1068,7 +1069,7 @@ L_STATE2:
 		SETERROR(INFLT_EBADTREE);
 		return INFLT_ERROR;
 	}
-	
+
 	PRVT->substate = 0;
 	return 0;
 }
@@ -1096,14 +1097,14 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			slength   = length;
 			sdistance = distance;
-			
+
 			PRVT->substate = 4;
 			return INFLT_TGTEXHSTD;
 		}
-		
+
 		maxrun = (uintxx) (state->target - state->tbgn);
 		if (distance > maxrun) {
 			uintxx offset;
@@ -1113,7 +1114,7 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 				SETERROR(INFLT_EFAROFFSET);
 				return INFLT_ERROR;
 			}
-			
+
 			buffer = PRVT->window;
 			if (maxrun > PRVT->end) {
 				maxrun -= PRVT->end;
@@ -1132,10 +1133,10 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			buffer = state->target - distance;
 			maxrun = length;
 		}
-		
+
 		if (maxrun > avaible)
 			maxrun = avaible;
-		
+
 		length  -= maxrun;
 		avaible -= maxrun;
 
@@ -1143,17 +1144,17 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			*state->target++ = *buffer++;
 		} while (--maxrun);
 	} while (length);
-	
+
 	return 0;
 }
 
 
 #if defined(CTB_ENV64)
-#	define FASTSRCLEFT 14
-#	define FASTTGTLEFT 274
+	#define FASTSRCLEFT 14
+	#define FASTTGTLEFT 274
 #else
-#	define FASTSRCLEFT 10
-#	define FASTTGTLEFT 266
+	#define FASTSRCLEFT 10
+	#define FASTTGTLEFT 266
 #endif
 
 static uintxx decodefast(struct TInflator* state);
@@ -1173,12 +1174,12 @@ decodeblck(struct TInflator* state)
 	uintxx bextra;
 	uintxx fastcheck;
 	struct TINFLTTEntry e;
-	
+
 	/* restore the state */
 	length   = slength;
 	bextra   = sbextra;
 	distance = sdistance;
-	
+
 	fastcheck = 1;
 	switch (PRVT->substate) {
 		case 0:
@@ -1188,12 +1189,12 @@ decodeblck(struct TInflator* state)
 		case 3: goto L_STATE3;
 		case 4: goto L_STATE4;
 	}
-	
+
 L_LOOP:
 	if (UNLIKELY(fastcheck)) {
 		uintxx targetleft;
 		uintxx sourceleft;
-		
+
 		targetleft = state->tend - state->target;
 		sourceleft = state->send - state->source;
 		if (targetleft >= FASTTGTLEFT && sourceleft >= FASTSRCLEFT) {
@@ -1210,18 +1211,18 @@ L_LOOP:
 		}
 		fastcheck = 0;
 	}
-	
+
 	for (;;) {
 		e = PRVT->ltable[getbits(state, LROOTBITS)];
 		if (LIKELY(e.length <= PRVT->bcount)) {
 			break;
 		}
-		
+
 		if (UNLIKELY(fetchbyte(state) == 0)) {
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			PRVT->substate = 0;
 			return INFLT_SRCEXHSTD;
 		}
@@ -1238,18 +1239,18 @@ L_LOOP:
 			if (LIKELY(e.length <= PRVT->bcount)) {
 				break;
 			}
-			
+
 			if (UNLIKELY(fetchbyte(state) == 0)) {
 				if (updatewindow(state)) {
 					return INFLT_ERROR;
 				}
-				
+
 				PRVT->substate = 0;
 				return INFLT_SRCEXHSTD;
 			}
 		}
 	}
-	
+
 	if (LIKELY(e.etag == LITERALSYMBOL)) {
 		if (LIKELY(state->tend > state->target)) {
 			*state->target++ = (uint8) e.info;
@@ -1258,14 +1259,14 @@ L_LOOP:
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			PRVT->substate = 0;
 			return INFLT_TGTEXHSTD;
 		}
 		dropbits(state, e.length);
 		goto L_LOOP;
 	}
-	
+
 	if (UNLIKELY(e.etag == ENDOFBLOCK)) {
 		dropbits(state, e.length);
 		PRVT->substate = 0;
@@ -1280,7 +1281,7 @@ L_LOOP:
 	dropbits(state, e.length);
 	length = e.info;
 	bextra = e.etag;
-	
+
 L_STATE1:
 	if (LIKELY(tryreadbits(state, bextra))) {
 		length += getbits(state, bextra);
@@ -1290,7 +1291,7 @@ L_STATE1:
 		if (updatewindow(state)) {
 			return INFLT_ERROR;
 		}
-		
+
 		PRVT->substate = 1;
 		slength   = length;
 		sbextra   = bextra;
@@ -1306,12 +1307,12 @@ L_STATE2:
 		if (LIKELY(e.length <= PRVT->bcount)) {
 			break;
 		}
-		
+
 		if (UNLIKELY(fetchbyte(state) == 0)) {
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
-			
+
 			PRVT->substate = 2;
 			slength   = length;
 			sbextra   = bextra;
@@ -1332,13 +1333,13 @@ L_STATE2:
 			if (LIKELY(e.length <= PRVT->bcount)) {
 				break;
 			}
-			
+
 			if(UNLIKELY(fetchbyte(state) == 0)) {
 				if (updatewindow(state)) {
 					SETERROR(INFLT_EOOM);
 					return INFLT_ERROR;
 				}
-				
+
 				PRVT->substate = 2;
 				slength   = length;
 				sbextra   = bextra;
@@ -1348,7 +1349,7 @@ L_STATE2:
 			}
 		}
 	}
-	
+
 	if (UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
@@ -1357,7 +1358,7 @@ L_STATE2:
 	dropbits(state, e.length);
 	distance = e.info;
 	bextra   = e.etag;
-	
+
 L_STATE3:
 	if (LIKELY(tryreadbits(state, bextra))) {
 		distance += getbits(state, bextra);
@@ -1367,7 +1368,7 @@ L_STATE3:
 		if (updatewindow(state)) {
 			return INFLT_ERROR;
 		}
-		
+
 		PRVT->substate = 3;
 		slength   = length;
 		sbextra   = bextra;
@@ -1396,11 +1397,11 @@ L_STATE4:
 #define DROPBITS(BUFFER, BCOUNT, N) (BUFFER) >>= (N); (BCOUNT) -= (N);
 
 #if defined(CTB_ENV64)
-#	define BBMASK 0x0000ffffffffffffULL
-#	define BBSWAP CTB_SWAP64ONBE
+	#define BBMASK 0x0000ffffffffffffULL
+	#define BBSWAP CTB_SWAP64ONBE
 #else
-#	define BBMASK 0x0000ffffUL
-#	define BBSWAP CTB_SWAP32ONBE
+	#define BBMASK 0x0000ffffUL
+	#define BBSWAP CTB_SWAP32ONBE
 #endif
 
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
@@ -1440,7 +1441,7 @@ decodefast(struct TInflator* state)
 	uint8* buffer;
 	BBTYPE n;
 	struct TINFLTTEntry e;
-	
+
 	/* set-up variables */
 	source = state->source;
 	target = state->target;
@@ -1450,11 +1451,11 @@ decodefast(struct TInflator* state)
 	bb = PRVT->bbuffer;
 	bc = PRVT->bcount;
 	r = 0;
-	
+
 L_LOOP:
 	if (UNLIKELY(tend - target < FASTTGTLEFT || send - source < FASTSRCLEFT))
 		goto L_DONE;
-	
+
 	if (LIKELY(bc < 15)) {
 		FILLBBUFFER();
 
@@ -1462,24 +1463,24 @@ L_LOOP:
 		bc +=     (sizeof(BBTYPE) - 2) << 3;
 		source += (sizeof(BBTYPE) - 2);
 	}
-	
+
 	/* decode literal or length */
 	e = PRVT->ltable[GETBITS(bb, LROOTBITS)];
 	if (LIKELY(e.etag == SUBTABLEENTRY)) {
 		e = PRVT->ltable[e.info + (GETBITS(bb, e.length) >> LROOTBITS)];
 	}
 	DROPBITS(bb, bc, e.length);
-	
+
 	if (LIKELY(e.etag == LITERALSYMBOL)) {
 		*target++ = (uint8) e.info;
 		goto L_LOOP;
 	}
-	
+
 	if (UNLIKELY(e.etag == ENDOFBLOCK)) {
 		r = ENDOFBLOCK;
 		goto L_DONE;
 	}
-	
+
 	if (UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
@@ -1493,10 +1494,10 @@ L_LOOP:
 		bc +=     (sizeof(BBTYPE) - 2) << 3;
 		source += (sizeof(BBTYPE) - 2);
 	}
-	
+
 	length = e.info + GETBITS(bb, e.etag);
 	DROPBITS(bb, bc, e.etag);
-	
+
 	if (UNLIKELY(bc < 15)) {
 		FILLBBUFFER();
 
@@ -1504,43 +1505,43 @@ L_LOOP:
 		bc +=     (sizeof(BBTYPE) - 2) << 3;
 		source += (sizeof(BBTYPE) - 2);
 	}
-	
+
 	/* decode distance */
 	e = PRVT->dtable[GETBITS(bb, DROOTBITS)];
 	if (LIKELY(e.etag == SUBTABLEENTRY)) {
 		e = PRVT->dtable[e.info + (GETBITS(bb, e.length) >> DROOTBITS)];
 	}
 	DROPBITS(bb, bc, e.length);
-	
+
 	if (UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
-	
+
 	if (UNLIKELY(e.etag > bc)) {
 		FILLBBUFFER();
-	
+
 		bb |= n << bc;
 		bc +=     (sizeof(BBTYPE) - 2) << 3;
 		source += (sizeof(BBTYPE) - 2);
 	}
-	
+
 	distance = e.info + GETBITS(bb, e.etag);
 	DROPBITS(bb, bc, e.etag);
-	
+
 	targetsz = (uintxx) (target - state->tbgn);
 	if (LIKELY(distance < targetsz)) {
 		uint8* end;
-		
+
 		buffer = target - distance;
 		maxrun = length;
 		end = target + maxrun;
-		
+
 		if (distance >= sizeof(BBTYPE)) {
 			memcpy(target, buffer, sizeof(BBTYPE));
 			target += sizeof(BBTYPE);
 			buffer += sizeof(BBTYPE);
-			
+
 			do {
 				memcpy(target, buffer, sizeof(BBTYPE));
 				target += sizeof(BBTYPE);
@@ -1563,12 +1564,12 @@ L_LOOP:
 				uintxx offset;
 
 				maxrun = distance - maxrun;
-				
+
 				if (UNLIKELY(maxrun > PRVT->count)) {
 					SETERROR(INFLT_EFAROFFSET);
 					return INFLT_ERROR;
 				}
-				
+
 				buffer = PRVT->window;
 				if (maxrun > PRVT->end) {
 					maxrun -= PRVT->end;
@@ -1595,13 +1596,13 @@ L_LOOP:
 		} while (length);
 	}
 	goto L_LOOP;
-	
+
 L_DONE:
 	/* restore unused bytes */
 	n = bc & 7;
 	PRVT->bbuffer = bb & ((((uintxx) 1) << n) - 1);
 	PRVT->bcount  = n;
-	
+
 	state->source = source - ((bc - n) >> 3);
 	state->target = target;
 	return r;
@@ -1706,7 +1707,7 @@ static const struct TINFLTTEntry lsttctable[1L << LROOTBITS] = {
 	{0x003f, 0x10, 0x08}, {0x00de, 0x10, 0x09}, {0x001b, 0x02, 0x07},
 	{0x006f, 0x10, 0x08}, {0x002f, 0x10, 0x08}, {0x00be, 0x10, 0x09},
 	{0x000f, 0x10, 0x08}, {0x008f, 0x10, 0x08}, {0x004f, 0x10, 0x08},
-	{0x00fe, 0x10, 0x09}, {0x0100, 0x11, 0x07}, {0x0050, 0x10, 0x08}, 
+	{0x00fe, 0x10, 0x09}, {0x0100, 0x11, 0x07}, {0x0050, 0x10, 0x08},
 	{0x0010, 0x10, 0x08}, {0x0073, 0x04, 0x08}, {0x001f, 0x02, 0x07},
 	{0x0070, 0x10, 0x08}, {0x0030, 0x10, 0x08}, {0x00c1, 0x10, 0x09},
 	{0x000a, 0x00, 0x07}, {0x0060, 0x10, 0x08}, {0x0020, 0x10, 0x08},
@@ -1805,13 +1806,13 @@ static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
 	{0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05}, {0x6001, 0x0d, 0x05},
 	{0x0004, 0x00, 0x05}, {0x0301, 0x08, 0x05}, {0x0031, 0x04, 0x05},
 	{0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05}, {0x0c01, 0x0a, 0x05},
-	{0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05}, {0x0001, 0x00, 0x05}, 
+	{0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05}, {0x0001, 0x00, 0x05},
 	{0x0101, 0x07, 0x05}, {0x0011, 0x03, 0x05}, {0x1001, 0x0b, 0x05},
 	{0x0005, 0x01, 0x05}, {0x0401, 0x09, 0x05}, {0x0041, 0x05, 0x05},
 	{0x4001, 0x0d, 0x05}, {0x0003, 0x00, 0x05}, {0x0201, 0x08, 0x05},
 	{0x0021, 0x04, 0x05}, {0x2001, 0x0c, 0x05}, {0x0009, 0x02, 0x05},
 	{0x0801, 0x0a, 0x05}, {0x0081, 0x06, 0x05}, {0x0000, 0x00, 0x05},
-	{0x0002, 0x00, 0x05}, {0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05}, 
+	{0x0002, 0x00, 0x05}, {0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05},
 	{0x1801, 0x0b, 0x05}, {0x0007, 0x01, 0x05}, {0x0601, 0x09, 0x05},
 	{0x0061, 0x05, 0x05}, {0x6001, 0x0d, 0x05}, {0x0004, 0x00, 0x05},
 	{0x0301, 0x08, 0x05}, {0x0031, 0x04, 0x05}, {0x3001, 0x0c, 0x05},
@@ -1822,8 +1823,8 @@ static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
 	{0x0003, 0x00, 0x05}, {0x0201, 0x08, 0x05}, {0x0021, 0x04, 0x05},
 	{0x2001, 0x0c, 0x05}, {0x0009, 0x02, 0x05}, {0x0801, 0x0a, 0x05},
 	{0x0081, 0x06, 0x05}, {0x0000, 0x00, 0x05}, {0x0002, 0x00, 0x05},
-	{0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05}, {0x1801, 0x0b, 0x05}, 
-	{0x0007, 0x01, 0x05}, {0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05}, 
+	{0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05}, {0x1801, 0x0b, 0x05},
+	{0x0007, 0x01, 0x05}, {0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05},
 	{0x6001, 0x0d, 0x05}, {0x0004, 0x00, 0x05}, {0x0301, 0x08, 0x05},
 	{0x0031, 0x04, 0x05}, {0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05},
 	{0x0c01, 0x0a, 0x05}, {0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05},
@@ -1842,7 +1843,7 @@ static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
 
 
 #define AUTOINCLUDE_1
-#include __FILE__
+	#include __FILE__
 #undef  AUTOINCLUDE_1
 
 #endif

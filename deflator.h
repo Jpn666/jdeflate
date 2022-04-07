@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2021, jpn 
- * 
+ * Copyright (C) 2021, jpn
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,7 +30,7 @@
  *     do {
  *         deflator_settgt(state, target, targetsize);
  *         result = deflator_deflate(state, final);
- *         
+ *
  *         ...target to deflator_tgtend(state) is the compressed data
  *     } while (result == DEFLT_TGTEXHSTD);
  * } while (result == DEFLT_SRCEXHSTD);
@@ -77,7 +77,7 @@ struct TDeflator {
 	uintxx state;
 	uintxx error;
 	uintxx flush;
-	
+
 	/* stream buffers */
 	uint8* source;
 	uint8* target;

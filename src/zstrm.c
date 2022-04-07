@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021, jpn 
+ * Copyright (C) 2021, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,13 +34,13 @@ struct TZStrm {
 	uint32 fsize;
 	uintxx level;  /* deflator level */
 	uintxx aux1;
-	
+
 	struct TDeflator* defltr;
 	struct TInflator* infltr;
-	
+
 	/* IO callback */
 	TZStrmIOFn iofn;
-	
+
 	/* IO callback parameter */
 	void* payload;
 
@@ -58,7 +58,7 @@ TZStrm*
 zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
 {
 	struct TZStrm* state;
-	
+
 	if (mode == ZSTRM_WMODE) {
 		if (level > 9) {
 			/* invalid compression level */
@@ -81,7 +81,7 @@ zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
 			return NULL;
 		}
 	}
-	
+
 	state = CTB_MALLOC(sizeof(struct TZStrm));
 	if (state == NULL) {
 		return NULL;
@@ -96,7 +96,7 @@ zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
 	}
 	state->infltr = NULL;
 	state->defltr = NULL;
-	
+
 	if (mode == ZSTRM_RMODE) {
 		state->infltr = inflator_create();
 		if (state->infltr == NULL) {
@@ -111,7 +111,7 @@ zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
 			return NULL;
 		}
 	}
-	
+
 	state->stype = strmtype;
 	zstrm_reset(state);
 	return state;
@@ -123,7 +123,7 @@ zstrm_destroy(TZStrm* state)
 	if (state == NULL) {
 		return;
 	}
-	
+
 	CTB_FREE(state->sbgn);
 	CTB_FREE(state->tbgn);
 
@@ -131,7 +131,7 @@ zstrm_destroy(TZStrm* state)
 		inflator_destroy(state->infltr);
 	if (state->defltr)
 		deflator_destroy(state->defltr);
-	
+
 	CTB_FREE(state);
 }
 
@@ -139,13 +139,13 @@ void
 zstrm_reset(TZStrm* state)
 {
 	ASSERT(state);
-	
+
 	state->state = 0;
 	state->error = 0;
 	state->fsize = 0;
 	state->aux1  = 0;
 	state->smode = state->stype;
-	
+
 	state->iofn    = NULL;
 	state->payload = NULL;
 
@@ -161,7 +161,7 @@ zstrm_reset(TZStrm* state)
 		state->tend += ZIOBFFRSZ;
 		deflator_reset(state->defltr, state->level);
 	}
-	
+
 	CRC32_INIT(state->crc32);
 }
 
@@ -181,7 +181,7 @@ void
 zstrm_setiofn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
 	ASSERT(state);
-	
+
 	if (state->state) {
 		SETSTATE(ZSTRM_BADSTATE);
 		if (state->error == 0) {
@@ -196,7 +196,7 @@ CTB_INLINE uint8
 fetchbyte(struct TZStrm* state)
 {
 	intxx r;
-	
+
 	if (LIKELY(state->source < state->send)) {
 		return *state->source++;
 	}
@@ -210,7 +210,7 @@ fetchbyte(struct TZStrm* state)
 		state->send   = state->sbgn + r;
 		return *state->source++;
 	}
-	
+
 	SETERROR(ZSTRM_EBADDATA);
 	return 0;
 }
@@ -221,7 +221,7 @@ readheader(struct TZStrm* state)
 	uint8 id1;
 	uint8 id2;
 	uint8 flags;
-	
+
 	id1 = fetchbyte(state);
 	id2 = fetchbyte(state);
 	if (id1 != 0x1f || id2 != 0x8b) {
@@ -242,13 +242,13 @@ readheader(struct TZStrm* state)
 	fetchbyte(state);
 	fetchbyte(state);
 	fetchbyte(state);
-	
+
 	/* extra */
 	if (flags & 0x04) {
 		uint8 a;
 		uint8 b;
 		uint16 length;
-		
+
 		a = fetchbyte(state);
 		b = fetchbyte(state);
 		for (length = a | (b << 0x08); length; length--)
@@ -264,7 +264,7 @@ readheader(struct TZStrm* state)
 		fetchbyte(state);
 		fetchbyte(state);
 	}
-	
+
 	if (state->error) {
 		return 0;
 	}
@@ -280,7 +280,7 @@ checktail(struct TZStrm* state)
 	uint8 b;
 	uint8 c;
 	uint8 d;
-	
+
 	/* crc32 */
 	a = fetchbyte(state);
 	b = fetchbyte(state);
@@ -292,7 +292,7 @@ checktail(struct TZStrm* state)
 		return 0;
 	}
 	else {
-		
+
 		if (crc32 != state->crc32) {
 			SETERROR(ZSTRM_ECHECKSUM);
 			return 0;
@@ -304,7 +304,7 @@ checktail(struct TZStrm* state)
 	b = fetchbyte(state);
 	c = fetchbyte(state);
 	d = fetchbyte(state);
-	
+
 	fsize = (a << 0x00) | (b << 0x08) | (c << 0x10) | (d << 0x18);
 	if (state->error) {
 		return 0;
@@ -329,17 +329,17 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 	uint8* bbegin;
 	uint8* target;
 	uint8* tend;
-	
+
 	target = state->target;
 	tend   = state->tend;
 	bbegin = buffer;
-	
+
 	while (LIKELY(size)) {
 		maxrun = (uintxx) (tend - target);
 		if (LIKELY(maxrun)) {
 			if (maxrun > size)
 				maxrun = size;
-			
+
 			for (size -= maxrun; maxrun >= 16; maxrun -= 16) {
 				memcpy(buffer, target, 16);
 				target += 16;
@@ -347,13 +347,13 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 			}
 			for (;maxrun; maxrun--)
 				*buffer++ = *target++;
-			
+
 			continue;
 		}
-		
+
 		if (LIKELY(sresult == INFLT_SRCEXHSTD)) {
 			intxx r;
-			
+
 			r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
 			if (LIKELY(r)) {
 				if (UNLIKELY((uintxx) r > ZIOBFFRSZ)) {
@@ -361,7 +361,7 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 					SETSTATE(ZSTRM_BADSTATE);
 					return 0;
 				}
-				
+
 				state->source = state->send = state->sbgn;
 				state->send  += r;
 				inflator_setsrc(state->infltr, state->sbgn, r);
@@ -376,7 +376,7 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 			if (UNLIKELY(sresult == INFLT_OK)) {
 				/* end of the stream */
 				state->source += inflator_srcend(state->infltr);
-				
+
 				if (state->smode == ZSTRM_GZIP) {
 					CRC32_FINALIZE(state->crc32);
 					if (checktail(state) == 0) {
@@ -388,11 +388,11 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 				break;
 			}
 		}
-		
+
 		inflator_settgt(state->infltr, state->tbgn, ZIOBFFRSZ);
 		sresult = inflator_inflate(state->infltr, 0);
 		n = inflator_tgtend(state->infltr);
-		
+
 		target = tend = state->tbgn;
 		tend  += n;
 
@@ -407,7 +407,7 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 			return 0;
 		}
 	}
-	
+
 	state->target = target;
 	state->tend   = tend;
 	return (uintxx) (buffer - bbegin);
@@ -418,7 +418,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 {
 	uintxx total;
 	ASSERT(state);
-	
+
 	/* check the stream mode */
 	if (UNLIKELY(state->infltr == NULL)) {
 		SETSTATE(ZSTRM_BADSTATE);
@@ -427,7 +427,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 		}
 		return 0;
 	}
-	
+
 	if (LIKELY(state->state == 1)) {
 		return inflate(state, buffer, size);
 	}
@@ -437,12 +437,12 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 			SETERROR(ZSTRM_EIOERROR);
 			return 0;
 		}
-		
+
 		if (state->smode == ZSTRM_GZIP || state->smode == ZSTRM_AUTO) {
 			if (readheader(state) == 0) {
 				if (state->smode == ZSTRM_AUTO) {
 					state->source = state->sbgn;
-					
+
 					if (state->sbgn[0] == 0x1f && state->sbgn[1] == 0x8b) {
 						SETSTATE(ZSTRM_BADSTATE);
 						return 0;
@@ -460,7 +460,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 					state->smode = ZSTRM_GZIP;
 				}
 			}
-			
+
 			total = state->send - state->source;
 			inflator_setsrc(state->infltr, state->source, total);
 			sresult = INFLT_TGTEXHSTD;
@@ -468,7 +468,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 		else {
 			sresult = INFLT_SRCEXHSTD;
 		}
-		
+
 		SETSTATE(1);
 		return zstrm_r(state, buffer, size);
 	}
@@ -482,7 +482,7 @@ CTB_INLINE void
 emittarget(struct TZStrm* state, uintxx count)
 {
 	intxx r;
-	
+
 	if (UNLIKELY(count == 0)) {
 		return;
 	}
@@ -528,7 +528,7 @@ emitheader(struct TZStrm* state)
 	emitbyte(state, 0x00);
 	emitbyte(state, 0x00);
 	emitbyte(state, 0x00);
-	
+
 	emittarget(state, (uintxx) (state->target - state->tbgn));
 	if (state->error) {
 		return 0;
@@ -544,11 +544,11 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 	uint8* bbegin;
 	uint8* source;
 	uint8* send;
-	
+
 	source = state->source;
 	send   = state->send;
 	bbegin = buffer;
-	
+
 	while (LIKELY(size)) {
 		maxrun = (uintxx) (send - source);
 		if (LIKELY(maxrun)) {
@@ -562,7 +562,7 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 			};
 			for (;maxrun; maxrun--)
 				*source++ = *buffer++;
-			
+
 			continue;
 		}
 
@@ -575,17 +575,17 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 		do {
 			deflator_settgt(state->defltr, state->tbgn, ZIOBFFRSZ);
 			r = deflator_deflate(state->defltr, 0);
-			
+
 			emittarget(state, deflator_tgtend(state->defltr));
 			if (UNLIKELY(state->error)) {
 				SETSTATE(ZSTRM_BADSTATE);
 				return 0;
 			}
 		} while (r == DEFLT_TGTEXHSTD);
-		
+
 		source = state->sbgn;
 	}
-	
+
 	state->source = source;
 	return (uintxx) (buffer - bbegin);
 }
@@ -597,7 +597,7 @@ uintxx
 zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 {
 	ASSERT(state);
-	
+
 	/* check the stream mode */
 	if (UNLIKELY(state->defltr == NULL)) {
 		SETSTATE(ZSTRM_BADSTATE);
@@ -606,7 +606,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 		}
 		return 0;
 	}
-	
+
 	if (LIKELY(state->state == 1)) {
 		return deflate(state, buffer, size);
 	}
@@ -616,7 +616,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 			SETERROR(ZSTRM_EIOERROR);
 			return 0;
 		}
-		
+
 		if (state->smode == ZSTRM_GZIP) {
 			if (emitheader(state) == 0) {
 				SETSTATE(ZSTRM_BADSTATE);
@@ -625,7 +625,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 		}
 		sflushmode = DEFLT_FLUSH;
 		SETSTATE(1);
-		
+
 		return zstrm_w(state, buffer, size);
 	}
 	return 0;
@@ -654,7 +654,7 @@ zstrm_flush(TZStrm* state)
 	do {
 		deflator_settgt(state->defltr, state->tbgn, ZIOBFFRSZ);
 		r = deflator_deflate(state->defltr, sflushmode);
-		
+
 		emittarget(state, deflator_tgtend(state->defltr));
 		if (UNLIKELY(state->error)) {
 			SETSTATE(ZSTRM_BADSTATE);
@@ -669,19 +669,19 @@ bool
 zstrm_endstream(TZStrm* state)
 {
 	ASSERT(state);
-	
+
 	if (state->defltr) {
 		if (state->state == 3 || state->state == ZSTRM_BADSTATE) {
 			return 0;
 		}
-		
+
 		if (state->state == 0) {
 			if (state->iofn == NULL) {
 				SETSTATE(ZSTRM_BADSTATE);
 				SETSTATE(ZSTRM_EIOERROR);
 				return 0;
 			}
-			
+
 			if (state->smode == ZSTRM_GZIP) {
 				if (emitheader(state) == 0) {
 					SETSTATE(ZSTRM_BADSTATE);
@@ -696,18 +696,18 @@ zstrm_endstream(TZStrm* state)
 			if (state->error) {
 				goto L_ERROR;
 			}
-			
+
 			if (state->smode == ZSTRM_GZIP) {
 				/* gzip tail */
 				uint32 n;
-				
+
 				CRC32_FINALIZE(state->crc32);
 				n = state->crc32;
 				emitbyte(state, (uint8) (n >> 0x00));
 				emitbyte(state, (uint8) (n >> 0x08));
 				emitbyte(state, (uint8) (n >> 0x10));
 				emitbyte(state, (uint8) (n >> 0x18));
-				
+
 				n = state->fsize;
 				emitbyte(state, (uint8) (n >> 0x00));
 				emitbyte(state, (uint8) (n >> 0x08));
@@ -718,17 +718,17 @@ zstrm_endstream(TZStrm* state)
 					goto L_ERROR;
 				}
 			}
-			
+
 			SETSTATE(3);
 		}
 		return 1;
 	}
-	
+
 	if (state->infltr) {
 		SETERROR(ZSTRM_EBADUSE);
 		goto L_ERROR;
 	}
-	
+
 L_ERROR:
 	SETSTATE(ZSTRM_BADSTATE);
 	return 0;

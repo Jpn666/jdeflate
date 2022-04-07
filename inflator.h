@@ -1,12 +1,12 @@
 /*
- * Copyright (C) 2021, jpn 
- * 
+ * Copyright (C) 2021, jpn
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,13 +25,13 @@
  * do {
  *     if (...no more input)
  *         final = 1;
- *     
+ *
  *     ...read a chunk of compressed data into source buffer
  *     inflator_setsrc(state, source, sourcesize);
  *     do {
  *         inflator_settgt(state, target, targetsize);
  *         result = inflator_inflate(state, final);
- *         
+ *
  *         ...target to inflator_tgtend(state) is the uncompressed data
  *     } while (result == INFLT_TGTEXHSTD);
  * } while (result == INFLT_SRCEXHSTD);
@@ -135,7 +135,7 @@ CTB_INLINE void
 inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 {
 	ASSERT(state);
-	
+
 	if (UNLIKELY(state->finalinput)) {
 		if (state->error == 0) {
 			state->error = INFLT_EBADUSE;
@@ -177,7 +177,7 @@ CTB_INLINE eINFLTError
 inflator_geterror(TInflator* state)
 {
 	ASSERT(state);
-	
+
 	return state->error;
 }
 

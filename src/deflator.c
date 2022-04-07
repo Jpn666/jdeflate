@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021, jpn 
+ * Copyright (C) 2021, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,43 +68,43 @@ struct TDEFLTPrvt {
 	uint32 bbuffer;
 #endif
 	uintxx bcount;
-	
+
 	/* window buffer allocated space */
 	uint8* window;
 	uint8* windowend;
-	
+
 	/* window buffer size */
 	uintxx wnsize;
-	
+
 	/* window span end (the used part of the window buffer) */
 	uint8* wend;
-	
+
 	/* cursor, position in the window buffer */
 	uintxx cursor;
-	
+
 	/* offset */
 	uint16 base;
-	
+
 	/* cache */
 	uint16* hlist;
 	uint16* chain;
-	
+
 	/* match search parameters */
 	uintxx nicematch;
 	uintxx goodmatch;
 	uintxx maxchain;
 	uintxx mininsert;
-	
+
 	/* lz token and literal buffer */
 	uint16* lzlist;
 	uint16* lzlistend;
-	
+
 	/* lz buffer size */
 	uintxx lzsize;
-	
+
 	/* last lz token */
 	uint16* zend;
-	
+
 	/* token index */
 	uint16* zptr;
 
@@ -113,7 +113,7 @@ struct TDEFLTPrvt {
 		/* chache table */
 		uint16 chain[SMASK + 1];
 		uint16 hlist[HMASK + 1];
-		
+
 		/* to count the frequencies (literals-lengths, distaces, precodes) */
 		uintxx lfrqs[DEFLT_LMAXSYMBOL];
 		uintxx dfrqs[DEFLT_DMAXSYMBOL];
@@ -121,13 +121,13 @@ struct TDEFLTPrvt {
 		uintxx lmax;
 		uintxx dmax;
 		uintxx cmax;
-		
+
 		/* to get the symbols sorted by frequency */
 		uintxx smap[DEFLT_LMAXSYMBOL];
-		
+
 		/* working array used to build the code lengths */
 		uintxx clns[DEFLT_LMAXSYMBOL];
-		
+
 		/* literal and precodes codes */
 		struct THCode1 {
 			uint8  bitlen;
@@ -135,18 +135,18 @@ struct TDEFLTPrvt {
 		}
 		litcodes[MAXLTCODES],
 		precodes[MAXPCCODES];
-		
+
 		/* length and distance codes */
 		struct THCode2 {
 			uint8  bitlen;
 			uint8  bextra;
-			
+
 			uint16 code;
 			uint16 base;
 		}
 		lnscodes[MAXLZCODES],
 		dstcodes[MAXLZCODES];
-		
+
 		/* encoding tables */
 		struct THCode1* littable;
 		struct THCode2* lnstable;
@@ -163,7 +163,7 @@ struct TDEFLTPrvt {
 /* window buffer size | lz buffer size */
 #define BUILDMEMINFO(A, B) (((A) << 0x08) | ((B) << 0x00))
 
-CTB_INLINE uintxx 
+CTB_INLINE uintxx
 getmeminfo(uintxx level)
 {
 	switch (level) {
@@ -201,7 +201,7 @@ setparameters(struct TDeflator* state, uintxx level)
 	uintxx nice;
 	uintxx lazy;
 	uintxx chain;
-	
+
 	switch (level) {
 		case 0: nice =   0; good =  0; lazy =   0; chain =    0; break;
 		case 1: nice =   3; good =  3; lazy =   3; chain =    1; break;
@@ -233,16 +233,16 @@ allocateprvt(TDeflator* state)
 	if (extra == NULL) {
 		return 0;
 	}
-	
+
 	/* set the base and extra bit values */
 	for (i = 0; i < MAXLZCODES; i++) {
 		extra->lnscodes[i] = slnscodes[i];
 		extra->dstcodes[i] = sdstcodes[i];
 	}
-	
+
 	PRVT->hlist = extra->hlist;
 	PRVT->chain = extra->chain;
-	
+
 	PRVT->extra = extra;
 	return 1;
 }
@@ -265,13 +265,13 @@ allocatemem(TDeflator* state, uintxx meminfo)
 	void* buffer;
 	ASSERT(state);
 
-	/* we needs some extra bytes at the end of the window buffer to 
-	 * perform fast comparisons */	
+	/* we needs some extra bytes at the end of the window buffer to
+	 * perform fast comparisons */
 	wsize = GETWNBFFSZ(meminfo) + WNDNGUARDSZ;
 	bsize = GETLZBFFSZ(meminfo);
 	if (bsize == 1)
 		bsize--;
-	
+
 	buffer = PRVT->window;
 	if (PRVT->wnsize < wsize) {
 		buffer = CTB_REALLOC(PRVT->window, wsize);
@@ -282,7 +282,7 @@ allocatemem(TDeflator* state, uintxx meminfo)
 	}
 	PRVT->windowend  = PRVT->window = buffer;
 	PRVT->windowend += wsize;
-	
+
 	buffer = PRVT->lzlist;
 	if (PRVT->lzsize < bsize) {
 		buffer = CTB_REALLOC(PRVT->lzlist, bsize * sizeof(PRVT->lzlist[0]));
@@ -318,17 +318,17 @@ TDeflator*
 deflator_create(uintxx level)
 {
 	struct TDeflator* state;
-	
+
 	if (level >= 10) {
 		/* invalid level */
 		return NULL;
 	}
-	
+
 	state = CTB_CALLOC(1, sizeof(struct TDEFLTPrvt));
 	if (state == NULL) {
 		return NULL;
 	}
-	
+
 	deflator_reset(state, level);
 	if (state->error) {
 		deflator_destroy(state);
@@ -342,12 +342,12 @@ resetcache(struct TDeflator* state)
 {
 	uintxx i;
 	uintxx j;
-	
+
 	j = SMASK + 1;
 	for (i = 0; j > i; i++) {
 		PRVT->chain[i] = 0;
 	}
-	
+
 	j = HMASK + 1;
 	for (i = 0; j > i; i++) {
 		PRVT->hlist[i] = 0;
@@ -358,7 +358,7 @@ CTB_INLINE void
 resetfreqs(TDeflator* state)
 {
 	uintxx i;
-	
+
 	for (i = 0; DEFLT_LMAXSYMBOL > i; i++) {
 		PRVT->extra->lfrqs[i] = 0;
 	}
@@ -380,14 +380,14 @@ deflator_reset(TDeflator* state, uintxx level)
 		SETERROR(DEFLT_ELEVEL);
 		goto L_ERROR;
 	}
-	
+
 	PRVT->level = level;
 	if (allocatemem(state, meminfo) == 0) {
 		SETERROR(DEFLT_EOOM);
 		goto L_ERROR;
 	}
 	setparameters(state, level);
-	
+
 	state->state = 0;
 	state->flush = 0;
 	state->error = 0;
@@ -402,17 +402,17 @@ deflator_reset(TDeflator* state, uintxx level)
 	/* private fields */
 	PRVT->used = 0;
 	PRVT->substate = 0;
-	
+
 	PRVT->blockinit = 0;
 	PRVT->blocktype = 0;
 	PRVT->hasinput  = 0;
 	PRVT->aux1 = 0;
 	PRVT->aux2 = 0;
 	PRVT->aux3 = 0;
-	
+
 	PRVT->bbuffer = 0;
 	PRVT->bcount  = 0;
-	
+
 	if (PRVT->level) {
 		PRVT->base   = 0;
 		PRVT->cursor = 0;
@@ -423,7 +423,7 @@ deflator_reset(TDeflator* state, uintxx level)
 	}
 	PRVT->wend = PRVT->window;
 	return;
-		
+
 L_ERROR:
 	SETSTATE(DEFLT_BADSTATE);
 }
@@ -439,7 +439,7 @@ deflator_destroy(TDeflator* state)
 		CTB_FREE(PRVT->window);
 	if (PRVT->lzlist)
 		CTB_FREE(PRVT->lzlist);
-	
+
 	if (PRVT->extra) {
 		CTB_FREE(PRVT->extra);
 	}
@@ -454,7 +454,7 @@ deflator_destroy(TDeflator* state)
 #endif
 
 
-/* 
+/*
  * BIT output operations */
 
 CTB_FORCEINLINE bool
@@ -465,7 +465,7 @@ tryemitbits(struct TDeflator* state, uintxx count)
 			return 0;
 		}
 		*state->target++ = (uint8) PRVT->bbuffer;
-		
+
 		PRVT->bbuffer >>= 8;
 	}
 	return 1;
@@ -475,22 +475,22 @@ CTB_FORCEINLINE uintxx
 tryflushbits(struct TDeflator* state)
 {
 	intxx bytes;
-	
+
 	if (PRVT->bcount == 0) {
 		return 1;
 	}
-	
+
 	bytes = (PRVT->bcount + 7) >> 3;
 	for (; bytes-- > 0; PRVT->bbuffer = PRVT->bbuffer >> 8) {
 		if (state->target >= state->tend) {
 			return 0;
 		}
 		state->target[0] = (uint8) PRVT->bbuffer;
-		
+
 		state->target += 1;
 		PRVT->bcount  -= 8;
 	}
-	
+
 	PRVT->bcount  = 0;
 	PRVT->bbuffer = 0;
 	return 1;
@@ -562,11 +562,11 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 {
 	uintxx r;
 	ASSERT(state);
-	
+
 	if (flush && (state->flush == 0 || state->flush == DEFLT_FLUSH)) {
 		state->flush = flush;
 	}
-	
+
 	PRVT->used = 1;
 	for (;;) {
 		switch (state->state) {
@@ -590,19 +590,19 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 						r = compress2(state);
 						break;
 				}
-				
+
 				if (r) {
 					/* source exhausted */
 					return r;
 				}
 			}
-			
+
 			/* fallthrough */
 			case 1: {
 				if ((r = flushblck(state)) != 0) {
 					return r;
 				}
-				
+
 				if (state->flush) {
 					if (PRVT->hasinput == 0) {
 						SETSTATE(2);
@@ -611,7 +611,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 				}
 				break;
 			}
-			
+
 			/* end the stream */
 			case 2: {
 				r = endstream(state);
@@ -658,7 +658,7 @@ compress0(struct TDeflator* state)
 	uintxx sourceleft;
 	uintxx targetleft;
 	uint8* buffer;
-	
+
 	switch (PRVT->substate) {
 		case 0:
 			break;
@@ -666,21 +666,21 @@ compress0(struct TDeflator* state)
 		case 2: goto L_STATE2;
 		case 3: goto L_STATE3;
 	}
-	
+
 L_LOOP:
 	outputleft = (uintxx) (PRVT->windowend - PRVT->wend);
 	sourceleft = (uintxx) (state->send - state->source);
-	
+
 	maxrun = MAXSTRDSZ - PRVT->aux1;
 	if (maxrun > outputleft)
 		maxrun = outputleft;
 	if (maxrun > sourceleft)
 		maxrun = sourceleft;
-	
+
 	memcpy(PRVT->wend, state->source, maxrun);
 	PRVT->wend    += maxrun;
 	state->source += maxrun;
-	
+
 	PRVT->aux1 += maxrun;
 	if (state->flush) {
 		if (PRVT->aux1 == 0 && sourceleft == 0) {
@@ -693,15 +693,15 @@ L_LOOP:
 			return DEFLT_SRCEXHSTD;
 		}
 	}
-	
+
 	PRVT->blockinit = 0;
-	
+
 L_STATE1:
 	if (PRVT->blockinit == 0) {
 		if (tryemitbits(state, 3)) {
 			putbits(state, 0, 1);
 			putbits(state, 0, 2);
-			
+
 			PRVT->blockinit = 1;
 		}
 		else {
@@ -709,20 +709,20 @@ L_STATE1:
 			return DEFLT_TGTEXHSTD;
 		}
 	}
-	
+
 	if (tryflushbits(state) == 0) {
 		PRVT->substate = 1;
 		return DEFLT_TGTEXHSTD;
 	}
 	PRVT->blockinit = 0;
-	
+
 L_STATE2:
 	targetleft = (uintxx) (state->tend - state->target);
-		
+
 	if (PRVT->blockinit == 0) {
 		uint16 a;
 		uint16 b;
-		
+
 		a = (uint16)  PRVT->aux1;
 		b = (uint16) ~PRVT->aux1;
 		if (targetleft >= 4) {
@@ -739,11 +739,11 @@ L_STATE2:
 			PRVT->aux3 |= ((uintxx) (a >> 0x08)) << 0x08;
 			PRVT->aux3 |= ((uintxx) (b >> 0x00)) << 0x10;
 			PRVT->aux3 |= ((uintxx) (b >> 0x08)) << 0x18;
-			
+
 		}
 		PRVT->blockinit = 1;
 	}
-	
+
 	for (; PRVT->aux2 < 4;) {
 		if (state->tend - state->target) {
 			*state->target++ = (uint8) (PRVT->aux3 >> (PRVT->aux2++ << 3));
@@ -753,27 +753,27 @@ L_STATE2:
 		return DEFLT_TGTEXHSTD;
 	}
 	PRVT->aux3 = 0;
-	
+
 L_STATE3:
 	targetleft = (uintxx) (state->tend - state->target);
-	
+
 	maxrun = PRVT->aux1;
 	if (maxrun > targetleft)
 		maxrun = targetleft;
-	
+
 	buffer = PRVT->wend - PRVT->aux1;
 	memcpy(state->target, buffer, maxrun);
 	state->target += maxrun;
-	
+
 	PRVT->aux1 -= maxrun;
 	if (PRVT->aux1) {
 		PRVT->substate = 3;
 		return DEFLT_TGTEXHSTD;
 	}
-	
+
 	PRVT->wend = PRVT->window;
 	goto L_LOOP;
-	
+
 L_DONE:
 	PRVT->aux1 = 0;
 	PRVT->aux2 = 0;
@@ -791,19 +791,19 @@ siftdown(uintxx* smap, uintxx* frqs, uintxx i, uintxx size)
 	uintxx left;
 	uintxx rght;
 	intxx diff;
-	
+
 	for (;;) {
 		left = (i << 1L) + 1;
 		rght = left + 1;
 		r = i;
-		
+
 		if (left <= size - 1) {
 			diff = frqs[smap[left]] - frqs[smap[i]];
 			if (diff > 0 || (diff == 0 && smap[left] > smap[i])) {
 				r = left;
 			}
 		}
-		
+
 		if (rght <= size - 1) {
 			diff = frqs[smap[rght]] - frqs[smap[r]];
 			if (diff > 0 || (diff == 0 && smap[rght] > smap[r])) {
@@ -825,17 +825,17 @@ heapsort(uintxx* smap, uintxx* frqs, uintxx size)
 {
 	uintxx swap;
 	intxx j;
-	
+
 	j = (size >> 1) +  1;
 	for (; j >= 0; j--) {
 		siftdown(smap, frqs, j, size);
 	}
-	
+
 	for (j = size - 1; j > 0; j--) {
 		swap = smap[0];
 		smap[0] = smap[j];
 		smap[j] = swap;
-		
+
 		siftdown(smap, frqs, 0, j);
 	}
 }
@@ -856,7 +856,7 @@ limitlengths(uintxx* lengths, intxx size, intxx mlen)
 		0x0008, 0x0004,
 		0x0002, 0x0001
 	};
-	
+
 	k = 0;
 	for (i = 0; i < size; i++) {
 		if (lengths[i] > (uintxx) mlen) {
@@ -864,13 +864,13 @@ limitlengths(uintxx* lengths, intxx size, intxx mlen)
 		}
 		k += ktable[lengths[i]];
 	}
-	
+
 	for (i = 0; i < size; i++) {
 		while (lengths[i] < (uintxx) mlen && (uintxx) k > ktable[0]) {
 			k -= ktable[++lengths[i]];
 		}
 	}
-	
+
 	i--;
 	for (; i >= 0; i--) {
 		while (k + ktable[lengths[i]] <= ktable[0]) {
@@ -895,7 +895,7 @@ katajainen(uintxx* frqs, intxx n)
 
 	tree = 0;
 	leaf = 0;
-	
+
 	for (next = 0; next < n - 1; next++) {
 		if (leaf >= n || ((tree < next) && (frqs[tree] < frqs[leaf]))) {
 			frqs[next] = frqs[tree];
@@ -904,7 +904,7 @@ katajainen(uintxx* frqs, intxx n)
 		else {
 			frqs[next] = frqs[leaf++];
 		}
-		
+
 		if (leaf >= n || ((tree < next) && (frqs[tree] < frqs[leaf]))) {
 			frqs[next] = frqs[next] + frqs[tree];
 			frqs[tree++] = next;
@@ -913,11 +913,11 @@ katajainen(uintxx* frqs, intxx n)
 			frqs[next] = frqs[next] + frqs[leaf++];
 		}
 	}
-	
+
 	prev = tree = n - 2;
 	dpth = 1;
 	cnts = 2;
-	
+
 	for (n--; n > 0; dpth++) {
 		for (used = 0; tree && frqs[tree - 1] >= (uintxx) prev;) {
 			tree--;
@@ -929,7 +929,7 @@ katajainen(uintxx* frqs, intxx n)
 
 		cnts = used << 1;
 		prev = tree;
-	}	
+	}
 }
 
 CTB_FORCEINLINE uint16
@@ -938,27 +938,27 @@ reversecode(uint16 code, uintxx length)
 	uintxx a;
 	uintxx b;
 	uintxx r;
-	
+
 	static const uint8 rtable[] = {
 		0x00, 0x08, 0x04, 0x0c,
 		0x02, 0x0a, 0x06, 0x0e,
 		0x01, 0x09, 0x05, 0x0d,
 		0x03, 0x0b, 0x07, 0x0f
 	};
-	
+
 	if (length > 8) {
 		a = (uint8) (code >> 0);
 		b = (uint8) (code >> 8);
 		a = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
 		b = rtable[b >> 4] | (rtable[b & 0x0f] << 4);
-		
+
 		r = b | (a << 8);
 		return (uint16) (r >> (0x10 - length));
 	}
-	
+
 	a = (uint8) code;
 	r = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-	
+
 	return (uint16) (r >> (0x08 - length));
 }
 
@@ -967,17 +967,17 @@ computelengths(struct TDEFLTExtra* extra, uintxx* frqs, uintxx size)
 {
 	intxx i;
 	intxx j;
-	
+
 	j = 0;
 	for (i = 0; (uintxx) i < size; i++) {
 		if (frqs[i])
 			extra->smap[j++] = i;
 	}
-	
+
 	if (j == 0) {
 		return 0;
 	}
-	
+
 	if (j == 1) {
 		extra->clns[0] = 1;
 	}
@@ -989,7 +989,7 @@ computelengths(struct TDEFLTExtra* extra, uintxx* frqs, uintxx size)
 		}
 		katajainen(extra->clns, j);
 	}
-	
+
 	return j;
 }
 
@@ -1012,36 +1012,36 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 	struct THCode2* r2;
 	uint16 counts[DEFLT_MAXBITS + 1];
 	uint16 ncodes[DEFLT_MAXBITS + 1];
-	
+
 	const uintxx mlimits[][3] = {
 		{DEFLT_LMAXSYMBOL, NMAXBITS},
 		{DEFLT_DMAXSYMBOL, NMAXBITS},
 		{DEFLT_CMAXSYMBOL, PMAXBITS},
 	};
-	
+
 	size = computelengths(extra, frqs, mlimits[mode][0]);
 	if (size == 0) {
 		return 0;
 	}
 	limitlengths(extra->clns, size, mlimits[mode][1]);
-	
+
 	/* count the lengths of each length */
 	for (i = 0; i < DEFLT_MAXBITS; i++) {
 		counts[i] = 0;
 	}
 	for (i = 0; size > i; i++) {
 		counts[extra->clns[i]]++;
-		
+
 		/* rearrange the frequencies */
 		frqs[extra->smap[i]] = extra->clns[i];
 	}
-	
+
 	/* calculate the codes */
 	ncodes[0] = 0;
 	for (i = 1; i <= DEFLT_MAXBITS; i++) {
 		ncodes[i] = (counts[i - 1] + ncodes[i - 1]) << 1;
 	}
-	
+
 	r1 = extra->litcodes;
 	r2 = extra->lnscodes;
 	j = 0;
@@ -1054,7 +1054,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 			r1 = extra->precodes;
 			break;
 	}
-	
+
 	last = 0;
 	size = mlimits[mode][0];
 	for (i = 0; i < size; i++) {
@@ -1062,13 +1062,13 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 		uint16 code;
 		struct THCode1* c1;
 		struct THCode2* c2;
-		
+
 		/* switch to from literals to lengths codes */
 		if (i == MAXLTCODES) {
 			j  = 1;
 			r2 = r2 - MAXLTCODES;
 		}
-		
+
 		bitlen = frqs[i];
 		if (bitlen == 0) {
 			if (j) {
@@ -1081,7 +1081,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 			}
 			continue;
 		}
-		
+
 		code = reversecode(ncodes[bitlen], bitlen);
 		if (j) {
 			c2 = r2 + i;
@@ -1096,7 +1096,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 		ncodes[bitlen] += 1;
 		last = i;
 	}
-	
+
 	return last + 1;
 }
 
@@ -1116,7 +1116,7 @@ countprecodes(uintxx* clns, uintxx size, uintxx* cfrqs)
 	p = 0xffff;
 	for (maxrun = i = j = count = 0; i <= size; i++) {
 		n = clns[i];
-		
+
 		if (n == p) {
 			count++;
 			if (count < maxrun)
@@ -1127,7 +1127,7 @@ countprecodes(uintxx* clns, uintxx size, uintxx* cfrqs)
 		else {
 			breakrun = 0;
 		}
-		
+
 		if (count > 2) {
 			if (p) {
 				s = 16;
@@ -1157,15 +1157,15 @@ countprecodes(uintxx* clns, uintxx size, uintxx* cfrqs)
 			}
 		}
 		cfrqs[n]++;
-		
+
 		maxrun = 136;
 		if (n)
 			maxrun = 6;
-		
+
 		clns[j++] = p = n;
-		count = 0;	
+		count = 0;
 	}
-	
+
 	clns[j - 1] = 0xffff;
 }
 
@@ -1180,10 +1180,10 @@ buildtables(struct TDEFLTExtra* extra)
 	uintxx lmax;
 	uintxx dmax;
 	uintxx i;
-	
+
 	lmax = setuptable(extra, LTABLEMODE, extra->lfrqs);
 	dmax = setuptable(extra, DTABLEMODE, extra->dfrqs);
-	
+
 	/* no distances */
 	if (dmax == 0 || dmax == 1) {
 		if (dmax == 0) {
@@ -1199,15 +1199,15 @@ buildtables(struct TDEFLTExtra* extra)
 	for (i = 0; i < DEFLT_CMAXSYMBOL; i++) {
 		extra->cfrqs[i] = 0;
 	}
-	
+
 	/* extra->lfrqs and extra->dfrqs are modified in place like in the
 	 * function setuptable above, after this it will containt the symbols for
 	 * precodes and will end with  0xffff */
 	countprecodes(extra->lfrqs, lmax, extra->cfrqs);
 	countprecodes(extra->dfrqs, dmax, extra->cfrqs);
-	
+
 	setuptable(extra, CTABLEMODE, extra->cfrqs);
-	
+
 	/* count the precodes */
 	for (i = DEFLT_CMAXSYMBOL - 1; i >= 3; i--) {
 		if (extra->cfrqs[pcodesorder[i]]) {
@@ -1215,7 +1215,7 @@ buildtables(struct TDEFLTExtra* extra)
 		}
 	}
 	extra->cmax = i + 1;
-	
+
 	extra->lmax = lmax;
 	extra->dmax = dmax;
 }
@@ -1261,11 +1261,11 @@ emitlzfast(struct TDeflator* state)
 	struct THCode2 lcode;
 	struct THCode2 dcode;
 	uint16* lzlist;
-	
+
 	littable = PRVT->extra->littable;
 	lnstable = PRVT->extra->lnstable;
 	dsttable = PRVT->extra->dsttable;
-	
+
 	/* load the state */
 	bb = PRVT->bbuffer;
 	bc = PRVT->bcount;
@@ -1281,7 +1281,7 @@ emitlzfast(struct TDeflator* state)
 			ENSURE2ON64(target, bb, bc);
 			ENSURE2ON32(target, bb, bc);
 			EMIT(bb, bc, code1.code, code1.bitlen);
-			
+
 			if (UNLIKELY(lzlist[0] == BLOCKENDSYMBOL)) {
 				r = 0;
 				goto L_DONE;
@@ -1292,12 +1292,12 @@ emitlzfast(struct TDeflator* state)
 
 		lcode = lnstable[(uint8) (lzlist[2] >> 0x08)];
 		dcode = dsttable[(uint8) (lzlist[2] >> 0x00)];
-		
+
 		/* length 15 + 5 */
 		ENSURE3ON64(target, bb, bc);
 		ENSURE2ON32(target, bb, bc);
 		EMIT(bb, bc, lcode.code, lcode.bitlen);
-		
+
 		if (LIKELY(lcode.bextra)) {
 			extra = (lzlist[0] - (uintxx) (0x8000)) - lcode.base;
 
@@ -1347,11 +1347,11 @@ emitlz(struct TDeflator* state)
 	struct THCode2* dsttable;
 	struct THCode1 code1;
 	struct THCode2 code2;
-	
+
 	littable = PRVT->extra->littable;
 	lnstable = PRVT->extra->lnstable;
 	dsttable = PRVT->extra->dsttable;
-	
+
 	fastcheck = 1;
 	switch (PRVT->aux1) {
 		case 0:
@@ -1360,7 +1360,7 @@ emitlz(struct TDeflator* state)
 		case 2: goto L_STATE2;
 		case 3: goto L_STATE2;
 	}
-	
+
 L_LOOP:
 	if (UNLIKELY(fastcheck)) {
 		uintxx remaining = (uintxx) (state->tend - state->target);
@@ -1374,7 +1374,7 @@ L_LOOP:
 		fastcheck = 0;
 		goto L_LOOP;
 	}
-	
+
 	if (PRVT->zptr[0] < 0x8000) {
 		code1 = littable[PRVT->zptr[0]];
 		if (tryemitbits(state, code1.bitlen)) {
@@ -1391,7 +1391,7 @@ L_LOOP:
 		PRVT->zptr++;
 		goto L_LOOP;
 	}
-	
+
 L_STATE1:
 	/* length */
 	code2 = lnstable[(uint8) (PRVT->zptr[2] >> 0x08)];
@@ -1405,7 +1405,7 @@ L_STATE1:
 			return 1;
 		}
 	}
-	
+
 	if (code2.bextra) {
 		extra = ((uintxx) PRVT->zptr[0] - 0x8000) - code2.base;
 		if (tryemitbits(state, code2.bextra)) {
@@ -1418,7 +1418,7 @@ L_STATE1:
 		}
 		PRVT->aux2 = 0;
 	}
-	
+
 L_STATE2:
 	/* distance */
 	code2 = dsttable[(uint8) (PRVT->zptr[2] >> 0x00)];
@@ -1432,7 +1432,7 @@ L_STATE2:
 			return 1;
 		}
 	}
-	
+
 	if (code2.bextra) {
 		extra = PRVT->zptr[1] - code2.base;
 		if (tryemitbits(state, code2.bextra)) {
@@ -1445,10 +1445,10 @@ L_STATE2:
 		}
 		PRVT->aux2 = 0;
 	}
-	
+
 	PRVT->zptr += 3;
 	goto L_LOOP;
-	
+
 L_DONE:
 	PRVT->aux1 = 0;
 	PRVT->aux2 = 0;
@@ -1461,7 +1461,7 @@ static uintxx
 emittrees(struct TDeflator* state)
 {
 	uintxx* slist, symbol;
-	
+
 	switch (PRVT->aux1) {
 		case 0:
 			break;
@@ -1478,7 +1478,7 @@ emittrees(struct TDeflator* state)
 	else {
 		return 1;
 	}
-	
+
 L_STATE1:
 	/* precodes */
 	slist = PRVT->extra->cfrqs;
@@ -1491,10 +1491,10 @@ L_STATE1:
 			return 1;
 		}
 	}
-	
+
 	PRVT->aux2 = 0;
 	PRVT->aux1 = 2;
-	
+
 L_STATE2:
 	/* trees */
 	if (PRVT->aux1 == 2) {
@@ -1503,12 +1503,12 @@ L_STATE2:
 	else {
 		slist = PRVT->extra->dfrqs;
 	}
-	
+
 	while ((symbol = slist[PRVT->aux2]) ^ 0xffff) {
 		uintxx extra;
 		uintxx times;
 		struct THCode1 code;
-	
+
 		code = PRVT->extra->precodes[symbol];
 		if (symbol <= 15) {
 			if (tryemitbits(state, PMAXBITS)) {
@@ -1517,15 +1517,15 @@ L_STATE2:
 			else {
 				return 1;
 			}
-			
+
 			PRVT->aux2++;
-			continue;	
+			continue;
 		}
-		
+
 		if (tryemitbits(state, PMAXBITS + 7) == 0) {
 			return 1;
 		}
-		
+
 		PRVT->aux2++;
 		switch (symbol) {
 			case 16: extra = 2; times = slist[PRVT->aux2] -  3; break;
@@ -1536,13 +1536,13 @@ L_STATE2:
 		putbits(state, times, extra);
 		PRVT->aux2++;
 	}
-	
+
 	PRVT->aux1++;
 	if (PRVT->aux1 == 3) {
 		PRVT->aux2 = 0;
 		goto L_STATE2;
 	}
-	
+
 	PRVT->aux1 = 0;
 	PRVT->aux2 = 0;
 	return 0;
@@ -1553,7 +1553,7 @@ flushblck(struct TDeflator* state)
 {
 	uintxx total;
 	uintxx r;
-	
+
 	switch (PRVT->substate) {
 		case 0:
 			break;
@@ -1569,12 +1569,12 @@ flushblck(struct TDeflator* state)
 		PRVT->blockinit = 0;
 		return 0;
 	}
-	
+
 	/* append the end-of-block symbol */
 	PRVT->extra->lfrqs[BLOCKENDSYMBOL]++;
 	PRVT->zend[0] = BLOCKENDSYMBOL;
 	PRVT->zend++;
-	
+
 	if (total < 0x400) {
 		/* force an static block for small blocks */
 		PRVT->blocktype = BLOCKSTTC;
@@ -1587,7 +1587,7 @@ flushblck(struct TDeflator* state)
 			PRVT->blocktype = BLOCKDNMC;
 		}
 	}
-	
+
 	if (PRVT->blocktype == BLOCKDNMC) {
 		PRVT->extra->littable = PRVT->extra->litcodes;
 		PRVT->extra->lnstable = PRVT->extra->lnscodes;
@@ -1599,7 +1599,7 @@ flushblck(struct TDeflator* state)
 		PRVT->extra->lnstable = (void*) slnscodes;
 		PRVT->extra->dsttable = (void*) sdstcodes;
 	}
-	
+
 L_STATE1:
 	/* block header */
 	if (tryemitbits(state, 3)) {
@@ -1619,14 +1619,14 @@ L_STATE2:
 			return DEFLT_TGTEXHSTD;
 		}
 	}
-	
+
 L_STATE3:
 	r = emitlz(state);
 	if (r) {
 		PRVT->substate = 3;
 		return DEFLT_TGTEXHSTD;
 	}
-	
+
 	SETSTATE(0);
 	PRVT->substate  = 0;
 	PRVT->blockinit = 0;
@@ -1638,7 +1638,7 @@ CTB_INLINE void
 insert(struct TDeflator* state, uint16 offset, uint16 hhash)
 {
 	uintxx hindex;
-	
+
 	hindex = hhash & HMASK;
 
 	PRVT->chain[offset & SMASK] = PRVT->hlist[hindex];
@@ -1651,9 +1651,9 @@ insert(struct TDeflator* state, uint16 offset, uint16 hhash)
 	#define GETSHEAD4(B, N) ((*((uint32*) ((B) + (N)))))
 #else
 	#define GETSHEAD3(B, N) \
-		((B)[(N) + 0] << 0x00) | \
-		((B)[(N) + 1] << 0x08) | \
-		((B)[(N) + 2] << 0x10)
+	    ((B)[(N) + 0] << 0x00) | \
+	    ((B)[(N) + 1] << 0x08) | \
+	    ((B)[(N) + 2] << 0x10)
 
 	#define GETSHEAD4(B, N) GETSHEAD3(B, N) | ((B)[(N) + 3] << 0x18)
 #endif
@@ -1675,7 +1675,7 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 
 	if (size > WNDWSIZE)
 		size = WNDWSIZE;
-	
+
 	if (PRVT->level <= 4) {
 		for (i = 0; i < size - 2; i++) {
 			insert(state, (uint16) i, GETHHASH(GETSHEAD3(dict, i)));
@@ -1699,10 +1699,10 @@ fillwindow(struct TDeflator* state)
 	uintxx total;
 	uintxx windowleft;
 	uintxx sourceleft;
-	
+
 	windowleft = (uintxx) (PRVT->windowend - PRVT->wend);
 	sourceleft = (uintxx) (state->send     - state->source);
-	
+
 	total = sourceleft;
 	if (LIKELY(sourceleft > windowleft)) {
 		if (LIKELY(windowleft < 0x400)) {
@@ -1723,7 +1723,7 @@ fillwindow(struct TDeflator* state)
 			windowleft = (uintxx) (PRVT->windowend - PRVT->wend);
 		}
 	}
-	
+
 	if (total > windowleft) {
 		total = windowleft;
 	}
@@ -1818,7 +1818,7 @@ getmatchlength(uint8* p1, uint8* p2, uint8* end)
 
 	p1 = (void*) (c1 - 1);
 	p2 = (void*) (c2 - 1);
-	
+
 	if (p1 >= end) {
 		return (uintxx) (end - pp);
 	}
@@ -1860,7 +1860,7 @@ getmatchlength(uint8* p1, uint8* p2, uint8* end)
 		(*p1++ == *p2++) &&
 		(*p1++ == *p2++) &&
 		(*p1++ == *p2++));
-	
+
 	p1--;
 	if (p1 >= end) {
 		return (uintxx) (end - pp);
@@ -1890,13 +1890,13 @@ findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
 
 	length = minlength;
 	offset = 0;
-	
+
 	strbgn = PRVT->window + PRVT->cursor;
 	strend = strbgn + MAXMATCH;
 	if (strend > PRVT->wend) {
 		strend = PRVT->wend;
 	}
-	
+
 	/* base offset */
 	rpos = PRVT->cursor - PRVT->base;
 
@@ -1913,7 +1913,7 @@ findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
 		}
 		pmatch = strbgn - noffset;
 		if (LIKELY(strbgn[length] == pmatch[length])) {
-			
+
 			nlength = getmatchlength(strbgn, pmatch, strend);
 			if (nlength > length) {
 				length = nlength;
@@ -1929,7 +1929,7 @@ findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
 		}
 		next = PRVT->chain[next & SMASK];
 	}
-	
+
 	return (struct TMatch) {length, offset};
 }
 
@@ -2109,13 +2109,13 @@ L_LOOP:
 			}
 		}
 	}
-	
+
 	while (LIKELY(limit > PRVT->cursor)) {
 		uintxx lsymbol;
 		uintxx dsymbol;
 		uint16 hash;
 		uint32 head;
-		
+
 		head = GETSHEAD3(PRVT->window, PRVT->cursor);
 		hash = GETHHASH(head);
 
@@ -2134,7 +2134,7 @@ L_LOOP:
 				for (skip = 1; match.length > skip; skip++) {
 					head = GETSHEAD3(PRVT->window, PRVT->cursor);
 					hash = GETHHASH(head);
-					
+
 					insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
 					PRVT->cursor++;
 				}
@@ -2150,7 +2150,7 @@ L_LOOP:
 
 			PRVT->cursor++;
 		}
-			
+
 		if (UNLIKELY(PRVT->zend + 4 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
@@ -2158,19 +2158,19 @@ L_LOOP:
 			return 0;
 		}
 	}
-	
+
 	r = fillwindow(state);
 	if (LIKELY(r)) {
 		goto L_LOOP;
 	}
-	
+
 	if (UNLIKELY(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */
 		return 0;
 	}
-	
+
 	return DEFLT_SRCEXHSTD;
 }
 
@@ -2203,10 +2203,10 @@ compress2(struct TDeflator* state)
 	skip = 1;
 	prevm.length = 0;
 	prevm.offset = 0;
-	
+
 	hasmatch  = 0;
 	minlength = MINMATCH;
-	
+
 L_LOOP:
 	limit = (uintxx) (PRVT->wend - PRVT->window);
 	if (limit - PRVT->cursor > MINLOOKAHEAD + 1) {
@@ -2229,13 +2229,13 @@ L_LOOP:
 	while (LIKELY(limit > PRVT->cursor)) {
 		uint16 hash;
 		uint32 head;
-		
+
 		for (;;) {
 			head = GETSHEAD4(PRVT->window, PRVT->cursor);
 			hash = GETHHASH(head);
 
 			match = findmatch(state, hash, minlength);
-			
+
 			insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
 			PRVT->cursor++;
 			if (LIKELY(hasmatch)) {
@@ -2278,11 +2278,11 @@ L_LOOP:
 			for (; match.length > skip; skip++) {
 				head = GETSHEAD4(PRVT->window, PRVT->cursor);
 				hash = GETHHASH(head);
-				
+
 				insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
 				PRVT->cursor++;
 			}
-			
+
 			hasmatch = 0;
 			minlength = MINMATCH;
 		}
@@ -2292,7 +2292,7 @@ L_LOOP:
 
 			APPENDL(PRVT->zend, c);
 		}
-		
+
 		if (UNLIKELY(PRVT->zend + 5 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
@@ -2301,19 +2301,19 @@ L_LOOP:
 			return 0;
 		}
 	}
-		
+
 	r = fillwindow(state);
 	if (LIKELY(r)) {
 		goto L_LOOP;
 	}
-	
+
 	if (UNLIKELY(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */
 		return 0;
 	}
-	
+
 	return DEFLT_SRCEXHSTD;
 }
 
@@ -2456,7 +2456,7 @@ static const struct THCode2 sdstcodes[MAXLZCODES] = {
 
 
 #define AUTOINCLUDE_1
-#include __FILE__
+	#include __FILE__
 #undef  AUTOINCLUDE_1
 
 #endif
