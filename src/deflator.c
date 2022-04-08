@@ -1819,23 +1819,22 @@ getmatchlength(uint8* p1, uint8* p2, uint8* end)
 	p1 = (void*) (c1 - 1);
 	p2 = (void*) (c2 - 1);
 
+	if (p1[0] ^ p2[0]) { p1 += 0; goto L1; } 
+	if (p1[1] ^ p2[1]) { p1 += 1; goto L1; }
+	if (p1[2] ^ p2[2]) { p1 += 2; goto L1; }
+	if (p1[3] ^ p2[3]) { p1 += 3; goto L1; }
+#if defined(CTB_ENV64)
+	if (p1[4] ^ p2[4]) { p1 += 4; goto L1; }
+	if (p1[5] ^ p2[5]) { p1 += 5; goto L1; }
+	if (p1[6] ^ p2[6]) { p1 += 6; goto L1; }
+	if (p1[7] ^ p2[7]) { p1 += 7; goto L1; }
+#endif
+
+L1:
 	if (p1 >= end) {
 		return (uintxx) (end - pp);
 	}
-
-	if (p1[0] ^ p2[0]) return (uintxx) ((p1 + 0) - pp);
-	if (p1[1] ^ p2[1]) return (uintxx) ((p1 + 1) - pp);
-	if (p1[2] ^ p2[2]) return (uintxx) ((p1 + 2) - pp);
-	if (p1[3] ^ p2[3]) return (uintxx) ((p1 + 3) - pp);
-#if defined(CTB_ENV64)
-	if (p1[4] ^ p2[4]) return (uintxx) ((p1 + 4) - pp);
-	if (p1[5] ^ p2[5]) return (uintxx) ((p1 + 5) - pp);
-	if (p1[6] ^ p2[6]) return (uintxx) ((p1 + 6) - pp);
-	if (p1[7] ^ p2[7]) return (uintxx) ((p1 + 7) - pp);
-#endif
-
-	/* never reached */
-	return 0;
+	return (uintxx) (p1 - pp);
 #endif
 }
 
