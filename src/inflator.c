@@ -1175,7 +1175,6 @@ decodeblck(struct TInflator* state)
 	uintxx fastcheck;
 	struct TINFLTTEntry e;
 
-	/* restore the state */
 	length   = slength;
 	bextra   = sbextra;
 	distance = sdistance;
@@ -1442,7 +1441,6 @@ decodefast(struct TInflator* state)
 	BBTYPE n;
 	struct TINFLTTEntry e;
 
-	/* set-up variables */
 	source = state->source;
 	target = state->target;
 	send   = state->send;

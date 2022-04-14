@@ -1202,7 +1202,7 @@ buildtables(struct TDEFLTExtra* extra)
 
 	/* extra->lfrqs and extra->dfrqs are modified in place like in the
 	 * function setuptable above, after this it will containt the symbols for
-	 * precodes and will end with  0xffff */
+	 * precodes and will end with 0xffff */
 	countprecodes(extra->lfrqs, lmax, extra->cfrqs);
 	countprecodes(extra->dfrqs, dmax, extra->cfrqs);
 
