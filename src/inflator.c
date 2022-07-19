@@ -767,7 +767,7 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 	ASSERT(state && dict);
 
 	if (PRVT->used) {
-		SETERROR(INFLT_EBADUSE);
+		SETERROR(INFLT_EINCORRECTUSE);
 		state->state = INFLT_BADSTATE;
 		return;
 	}

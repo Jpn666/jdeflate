@@ -185,7 +185,7 @@ zstrm_setiofn(TZStrm* state, TZStrmIOFn fn, void* payload)
 	if (state->state) {
 		SETSTATE(ZSTRM_BADSTATE);
 		if (state->error == 0) {
-			SETERROR(ZSTRM_EBADUSE);
+			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 	}
 	state->iofn = fn;
@@ -423,7 +423,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 	if (UNLIKELY(state->infltr == NULL)) {
 		SETSTATE(ZSTRM_BADSTATE);
 		if (state->error == 0) {
-			SETERROR(ZSTRM_EBADUSE);
+			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
@@ -602,7 +602,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 	if (UNLIKELY(state->defltr == NULL)) {
 		SETSTATE(ZSTRM_BADSTATE);
 		if (state->error == 0) {
-			SETERROR(ZSTRM_EBADUSE);
+			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
@@ -725,7 +725,7 @@ zstrm_endstream(TZStrm* state)
 	}
 
 	if (state->infltr) {
-		SETERROR(ZSTRM_EBADUSE);
+		SETERROR(ZSTRM_EINCORRECTUSE);
 		goto L_ERROR;
 	}
 

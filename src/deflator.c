@@ -1668,7 +1668,7 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 	ASSERT(state && dict);
 
 	if (PRVT->level == 0 || PRVT->used) {
-		SETERROR(DEFLT_EBADUSE);
+		SETERROR(DEFLT_EINCORRECTUSE);
 		SETSTATE(DEFLT_BADSTATE);
 		return;
 	}

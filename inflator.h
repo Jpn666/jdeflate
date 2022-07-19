@@ -60,7 +60,7 @@ typedef enum {
 	INFLT_EBADBLOCK  = 5,
 	INFLT_EINPUTEND  = 6,
 	INFLT_EOOM       = 7,
-	INFLT_EBADUSE    = 8
+	INFLT_EINCORRECTUSE = 8
 } eINFLTError;
 
 
@@ -138,7 +138,7 @@ inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 
 	if (UNLIKELY(state->finalinput)) {
 		if (state->error == 0) {
-			state->error = INFLT_EBADUSE;
+			state->error = INFLT_EINCORRECTUSE;
 			state->state = INFLT_EBADSTATE;
 		}
 		return;

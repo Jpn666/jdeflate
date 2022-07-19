@@ -64,7 +64,7 @@ typedef enum {
 	DEFLT_EBADSTATE = 1,
 	DEFLT_EOOM      = 2,
 	DEFLT_ELEVEL    = 3,
-	DEFLT_EBADUSE   = 4
+	DEFLT_EINCORRECTUSE = 4
 } eDEFLTError;
 
 
@@ -141,7 +141,7 @@ deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 
 	if (UNLIKELY(state->flush)) {
 		if (state->error) {
-			state->error = DEFLT_EBADUSE;
+			state->error = DEFLT_EINCORRECTUSE;
 			state->state = DEFLT_BADSTATE;
 		}
 		return;
