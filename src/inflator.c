@@ -1841,7 +1841,7 @@ static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
 
 
 #define AUTOINCLUDE_1
-	#include __FILE__
+	#include "inflator.c"
 #undef  AUTOINCLUDE_1
 
 #endif

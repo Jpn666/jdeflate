@@ -2455,7 +2455,7 @@ static const struct THCode2 sdstcodes[MAXLZCODES] = {
 
 
 #define AUTOINCLUDE_1
-	#include __FILE__
+	#include "deflator.c"
 #undef  AUTOINCLUDE_1
 
 #endif
