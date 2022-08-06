@@ -15,6 +15,7 @@
  */
 
 #include "../inflator.h"
+#include <string.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -45,7 +46,7 @@
 
 
 /* private stuff */
-struct TINFLTTPrvt {
+struct TINFLTPrvt {
 	/* public fields */
 	struct TInflator hidden;
 
@@ -99,6 +100,9 @@ struct TINFLTTPrvt {
 		uint16 lengths[DEFLT_LMAXSYMBOL + DEFLT_DMAXSYMBOL];
 	}
 	*tables;
+
+	/* custom allocator */
+	struct TAllocator* allocator;
 };
 
 #endif
@@ -106,22 +110,27 @@ struct TINFLTTPrvt {
 
 #if defined(AUTOINCLUDE_1)
 
-#define PRVT ((struct TINFLTTPrvt*) state)
+#define PRVT ((struct TINFLTPrvt*) state)
 
 TInflator*
-inflator_create(void)
+inflator_create(TAllocator* allocator)
 {
 	struct TInflator* state;
 
-	state = CTB_MALLOC(sizeof(struct TINFLTTPrvt));
+	if (allocator) {
+		state = allocator->reserve(allocator->user, sizeof(struct TINFLTPrvt));
+	}
+	else {
+		state = CTB_MALLOC(sizeof(struct TINFLTPrvt));
+	}
 	if (state == NULL) {
 		return NULL;
 	}
+	PRVT->allocator = allocator;
 
 	PRVT->window = NULL;
 	PRVT->tables = NULL;
 	inflator_reset(state);
-
 	return state;
 }
 
@@ -161,6 +170,27 @@ inflator_reset(TInflator* state)
 	PRVT->end   = 0;
 }
 
+
+CTB_INLINE void*
+reserve(struct TINFLTPrvt* p, uintxx amount)
+{
+	if (p->allocator) {
+		return p->allocator->reserve(p->allocator->user, amount);
+	}
+	return CTB_MALLOC(amount);
+}
+
+CTB_INLINE void
+release(struct TINFLTPrvt* p, void* memory)
+{
+	if (p->allocator) {
+		p->allocator->release(p->allocator->user, memory);
+		return;
+	}
+	CTB_FREE(memory);
+}
+
+
 void
 inflator_destroy(TInflator* state)
 {
@@ -168,13 +198,13 @@ inflator_destroy(TInflator* state)
 		return;
 	}
 
-	if (PRVT->window)
-		CTB_FREE(PRVT->window);
-
-	if (PRVT->tables)
-		CTB_FREE(PRVT->tables);
-
-	CTB_FREE(state);
+	if (PRVT->window) {
+		release(PRVT, PRVT->window);
+	}
+	if (PRVT->tables) {
+		release(PRVT, PRVT->tables);
+	}
+	release(PRVT, state);
 }
 
 
@@ -543,7 +573,7 @@ setuptables(struct TInflator* state)
 	struct TTINFLTTables* tables;
 
 	if (PRVT->tables == NULL) {
-		tables = CTB_MALLOC(sizeof(struct TTINFLTTables));
+		tables = reserve(PRVT, sizeof(struct TTINFLTTables));
 		if (tables == NULL) {
 			SETERROR(INFLT_EOOM);
 			return INFLT_ERROR;
@@ -622,8 +652,7 @@ updatewindow(struct TInflator* state)
 
 	/* allocate the window buffer */
 	if (UNLIKELY(PRVT->window == NULL)) {
-		buffer = CTB_MALLOC(WNDWSIZE);
-
+		buffer = reserve(PRVT, WNDWSIZE);
 		if (buffer == NULL) {
 			SETERROR(INFLT_EOOM);
 			return INFLT_ERROR;
@@ -775,7 +804,7 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 	if (PRVT->window == NULL) {
 		uint8* buffer;
 
-		buffer = CTB_MALLOC(WNDWSIZE);
+		buffer = reserve(PRVT, WNDWSIZE);
 		if (buffer == NULL) {
 			SETERROR(INFLT_EOOM);
 			state->state = INFLT_BADSTATE;

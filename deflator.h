@@ -92,7 +92,7 @@ typedef struct TDeflator TDeflator;
 
 /*
  * */
-TDeflator* deflator_create(uintxx level);
+TDeflator* deflator_create(uintxx level, TAllocator* allocator);
 
 /*
  * */

@@ -24,19 +24,24 @@
 #include <ctoolbox.h>
 
 
-/* Stream type */
-typedef enum {
-	ZSTRM_AUTO    = 0,
-	ZSTRM_DEFLATE = 1,
-	ZSTRM_GZIP    = 2
-} eZSTRMType;
+#define ZSTRM_MODEMASK 0x03
+#define ZSTRM_TYPEMASK 0x3c
 
 
 /* Stream mode */
 typedef enum {
-	ZSTRM_RMODE = 0,
-	ZSTRM_WMODE = 1
+	ZSTRM_RMODE = 0x01,
+	ZSTRM_WMODE = 0x02,
 } eZSTRMMode;
+
+
+/* Stream type */
+typedef enum {
+	ZSTRM_AUTO  = 0x04,
+	ZSTRM_DFLT  = 0x08,
+	ZSTRM_GZIP  = 0x10,
+	ZSTRM_ZLIB  = 0x20,
+} eZSTRMType;
 
 
 /* Error codes */
@@ -67,9 +72,8 @@ typedef struct TZStrm TZStrm;
 
 
 /*
- * Creates a new stream. If mode is ZSTRM_WMODE then it's posible to set
- * the compression level (0-9), level is ignored if mode is ZSTRM_RMODE */
-TZStrm* zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level);
+ * Creates a new stream. */
+TZStrm* zstrm_create(uintxx flags, uintxx level, TAllocator* allocator);
 
 /*
  * */

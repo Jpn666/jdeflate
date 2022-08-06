@@ -15,6 +15,7 @@
  */
 
 #include "../deflator.h"
+#include <string.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -153,6 +154,9 @@ struct TDEFLTPrvt {
 		struct THCode2* dsttable;
 	}
 	*extra;
+
+	/* custom allocator */
+	struct TAllocator* allocator;
 };
 
 #endif
@@ -222,6 +226,25 @@ setparameters(struct TDeflator* state, uintxx level)
 	PRVT->maxchain  = chain;
 }
 
+CTB_INLINE void*
+reserve(struct TDEFLTPrvt* p, uintxx amount)
+{
+	if (p->allocator) {
+		return p->allocator->reserve(p->allocator->user, amount);
+	}
+	return CTB_MALLOC(amount);
+}
+
+CTB_INLINE void
+release(struct TDEFLTPrvt* p, void* memory)
+{
+	if (p->allocator) {
+		p->allocator->release(p->allocator->user, memory);
+		return;
+	}
+	CTB_FREE(memory);
+}
+
 
 CTB_INLINE uintxx
 allocateprvt(TDeflator* state)
@@ -229,7 +252,7 @@ allocateprvt(TDeflator* state)
 	uintxx i;
 	struct TDEFLTExtra* extra;
 
-	extra = CTB_MALLOC(sizeof(struct TDEFLTExtra));
+	extra = reserve(PRVT, sizeof(struct TDEFLTExtra));
 	if (extra == NULL) {
 		return 0;
 	}
@@ -274,10 +297,11 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 	buffer = PRVT->window;
 	if (PRVT->wnsize < wsize) {
-		buffer = CTB_REALLOC(PRVT->window, wsize);
+		buffer = reserve(PRVT, wsize);
 		if (buffer == NULL) {
 			return 0;
 		}
+		release(PRVT, PRVT->window);
 		PRVT->wnsize = wsize;
 	}
 	PRVT->windowend  = PRVT->window = buffer;
@@ -285,10 +309,11 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 	buffer = PRVT->lzlist;
 	if (PRVT->lzsize < bsize) {
-		buffer = CTB_REALLOC(PRVT->lzlist, bsize * sizeof(PRVT->lzlist[0]));
+		buffer = reserve(PRVT, bsize * sizeof(PRVT->lzlist[0]));
 		if (buffer == NULL) {
 			return 0;
 		}
+		release(PRVT, PRVT->lzlist);
 		PRVT->lzsize = bsize;
 	}
 	PRVT->lzlistend  = PRVT->lzlist = buffer;
@@ -315,7 +340,7 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 
 TDeflator*
-deflator_create(uintxx level)
+deflator_create(uintxx level, TAllocator* allocator)
 {
 	struct TDeflator* state;
 
@@ -324,10 +349,18 @@ deflator_create(uintxx level)
 		return NULL;
 	}
 
-	state = CTB_CALLOC(1, sizeof(struct TDEFLTPrvt));
+	if (allocator) {
+		state = allocator->reserve(allocator->user, sizeof(struct TDEFLTPrvt));
+	}
+	else {
+		state = CTB_MALLOC(sizeof(struct TDEFLTPrvt));
+	}
 	if (state == NULL) {
 		return NULL;
 	}
+	// fixme
+	memset(state, 0, sizeof(struct TDEFLTPrvt));
+	PRVT->allocator = allocator;
 
 	deflator_reset(state, level);
 	if (state->error) {
@@ -435,15 +468,17 @@ deflator_destroy(TDeflator* state)
 		return;
 	}
 
-	if (PRVT->window)
-		CTB_FREE(PRVT->window);
-	if (PRVT->lzlist)
-		CTB_FREE(PRVT->lzlist);
+	if (PRVT->window) {
+		release(PRVT, PRVT->window);
+	}
+	if (PRVT->lzlist) {
+		release(PRVT, PRVT->lzlist);
+	}
 
 	if (PRVT->extra) {
-		CTB_FREE(PRVT->extra);
+		release(PRVT, PRVT->extra);
 	}
-	CTB_FREE(state);
+	release(PRVT, state);
 }
 
 
@@ -1819,7 +1854,7 @@ getmatchlength(uint8* p1, uint8* p2, uint8* end)
 	p1 = (void*) (c1 - 1);
 	p2 = (void*) (c2 - 1);
 
-	if (p1[0] ^ p2[0]) { p1 += 0; goto L1; } 
+	if (p1[0] ^ p2[0]) { p1 += 0; goto L1; }
 	if (p1[1] ^ p2[1]) { p1 += 1; goto L1; }
 	if (p1[2] ^ p2[2]) { p1 += 2; goto L1; }
 	if (p1[3] ^ p2[3]) { p1 += 3; goto L1; }

@@ -18,6 +18,7 @@
 #include "../deflator.h"
 #include "../inflator.h"
 #include <crypto/crc32.h>
+#include <string.h>
 
 
 #define ZIOBFFRSZ 8192
@@ -51,68 +52,114 @@ struct TZStrm {
 	uint8* send;
 	uint8* tbgn;
 	uint8* tend;
+
+	/* custom allocator */
+	struct TAllocator* allocator;
 };
 
 
-TZStrm*
-zstrm_create(eZSTRMMode mode, eZSTRMType strmtype, uintxx level)
+CTB_INLINE void*
+reserve(struct TZStrm* p, uintxx amount)
 {
+	if (p->allocator) {
+		return p->allocator->reserve(p->allocator->user, amount);
+	}
+	return CTB_MALLOC(amount);
+}
+
+CTB_INLINE void
+release(struct TZStrm* p, void* memory)
+{
+	if (p->allocator) {
+		p->allocator->release(p->allocator->user, memory);
+		return;
+	}
+	CTB_FREE(memory);
+}
+
+
+TZStrm*
+zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
+{
+	uintxx mode;
+	uintxx type;
 	struct TZStrm* state;
+
+	mode = flags & ZSTRM_MODEMASK;
+	type = flags & ZSTRM_TYPEMASK;
+	switch (mode) {
+		case ZSTRM_WMODE:
+		case ZSTRM_RMODE:
+			break;
+		default:
+			/* invalid mode */
+			return NULL;
+	}
+
+	switch (type) {
+		case ZSTRM_DFLT:
+		case ZSTRM_GZIP:
+		case ZSTRM_AUTO:
+			break;
+		default:
+			/* invalid mode */
+			return NULL;
+	}
 
 	if (mode == ZSTRM_WMODE) {
 		if (level > 9) {
 			/* invalid compression level */
 			return NULL;
 		}
+
+		if (type == ZSTRM_AUTO) {
+			/* auto stream type in compression mode */
+			return NULL;
+		}
+	}
+
+	if (allocator) {
+		state = allocator->reserve(allocator->user, sizeof(struct TZStrm));
 	}
 	else {
-		if (mode != ZSTRM_RMODE) {
-			return NULL;
-		}
+		state = CTB_MALLOC(sizeof(struct TZStrm));
 	}
-
-	if (strmtype != ZSTRM_GZIP && strmtype != ZSTRM_DEFLATE) {
-		if (strmtype == ZSTRM_AUTO) {
-			if (mode != ZSTRM_RMODE) {
-				return NULL;
-			}
-		}
-		else {
-			return NULL;
-		}
-	}
-
-	state = CTB_MALLOC(sizeof(struct TZStrm));
 	if (state == NULL) {
 		return NULL;
 	}
-	state->sbgn = CTB_MALLOC(ZIOBFFRSZ);
-	state->tbgn = CTB_MALLOC(ZIOBFFRSZ);
+	state->allocator = allocator;
+
+	state->sbgn = reserve(state, ZIOBFFRSZ);
+	state->tbgn = reserve(state, ZIOBFFRSZ);
 	if (state->sbgn == NULL || state->tbgn == NULL) {
-		CTB_FREE(state->sbgn);
-		CTB_FREE(state->tbgn);
-		CTB_FREE(state);
+		if (state->sbgn) {
+			release(state, state->sbgn);
+		}
+		if (state->tbgn) {
+			release(state, state->tbgn);
+		}
+		release(state, state);
 		return NULL;
 	}
 	state->infltr = NULL;
 	state->defltr = NULL;
 
 	if (mode == ZSTRM_RMODE) {
-		state->infltr = inflator_create();
+		state->infltr = inflator_create(allocator);
 		if (state->infltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
 		}
 	}
 	else {
-		state->defltr = deflator_create((state->level = level));
+		state->defltr = deflator_create((state->level = level), allocator);
 		if (state->defltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
 		}
 	}
 
-	state->stype = strmtype;
+	state->stype = type;
 	zstrm_reset(state);
 	return state;
 }
@@ -124,15 +171,16 @@ zstrm_destroy(TZStrm* state)
 		return;
 	}
 
-	CTB_FREE(state->sbgn);
-	CTB_FREE(state->tbgn);
+	release(state, state->sbgn);
+	release(state, state->tbgn);
 
-	if (state->infltr)
+	if (state->infltr) {
 		inflator_destroy(state->infltr);
-	if (state->defltr)
+	}
+	if (state->defltr) {
 		deflator_destroy(state->defltr);
-
-	CTB_FREE(state);
+	}
+	release(state, state);
 }
 
 void
@@ -448,7 +496,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 						return 0;
 					}
 					SETERROR(0);
-					state->smode = ZSTRM_DEFLATE;
+					state->smode = ZSTRM_DFLT;
 				}
 				else {
 					SETSTATE(ZSTRM_BADSTATE);

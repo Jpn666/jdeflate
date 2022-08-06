@@ -89,7 +89,7 @@ typedef struct TInflator TInflator;
 
 /*
  * */
-TInflator* inflator_create(void);
+TInflator* inflator_create(TAllocator* allocator);
 
 /*
  * */
