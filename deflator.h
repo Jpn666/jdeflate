@@ -128,7 +128,7 @@ void deflator_setdctnr(TDeflator*, uint8* dict, uintxx size);
 
 /*
  * */
-void deflator_reset(TDeflator* , uintxx level);
+void deflator_reset(TDeflator*, uintxx level);
 
 
 /*

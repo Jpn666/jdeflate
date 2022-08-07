@@ -109,7 +109,7 @@ struct TDEFLTPrvt {
 	/* token index */
 	uint16* zptr;
 
-	/* used for any non 0 level */
+	/* used for any level greater than 0 */
 	struct TDEFLTExtra {
 		/* chache table */
 		uint16 chain[SMASK + 1];
@@ -297,11 +297,16 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 	buffer = PRVT->window;
 	if (PRVT->wnsize < wsize) {
+		if (PRVT->window) {
+			release(PRVT, PRVT->window);
+			PRVT->window = NULL;
+			PRVT->wnsize = 0;
+		}
+
 		buffer = reserve(PRVT, wsize);
 		if (buffer == NULL) {
 			return 0;
 		}
-		release(PRVT, PRVT->window);
 		PRVT->wnsize = wsize;
 	}
 	PRVT->windowend  = PRVT->window = buffer;
@@ -309,11 +314,16 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 	buffer = PRVT->lzlist;
 	if (PRVT->lzsize < bsize) {
+		if (PRVT->lzlist) {
+			release(PRVT, PRVT->lzlist);
+			PRVT->lzlist = NULL;
+			PRVT->lzsize = 0;
+		}
+
 		buffer = reserve(PRVT, bsize * sizeof(PRVT->lzlist[0]));
 		if (buffer == NULL) {
 			return 0;
 		}
-		release(PRVT, PRVT->lzlist);
 		PRVT->lzsize = bsize;
 	}
 	PRVT->lzlistend  = PRVT->lzlist = buffer;
@@ -358,9 +368,12 @@ deflator_create(uintxx level, TAllocator* allocator)
 	if (state == NULL) {
 		return NULL;
 	}
-	// fixme
-	memset(state, 0, sizeof(struct TDEFLTPrvt));
 	PRVT->allocator = allocator;
+
+	PRVT->window = NULL;
+	PRVT->lzlist = NULL;
+	PRVT->wnsize = PRVT->lzsize = 0;
+	PRVT->extra  = NULL;
 
 	deflator_reset(state, level);
 	if (state->error) {
@@ -454,6 +467,7 @@ deflator_reset(TDeflator* state, uintxx level)
 		PRVT->zptr = PRVT->lzlist;
 		resetcache(state);
 	}
+
 	PRVT->wend = PRVT->window;
 	return;
 
