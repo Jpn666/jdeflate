@@ -131,8 +131,34 @@ inflator_create(TAllocator* allocator)
 	PRVT->window = NULL;
 	PRVT->tables = NULL;
 	inflator_reset(state);
+	if (state->error) {
+		inflator_destroy(state);
+		return NULL;
+	}
 	return state;
 }
+
+CTB_INLINE void*
+reserve(struct TINFLTPrvt* p, uintxx amount)
+{
+	if (p->allocator) {
+		return p->allocator->reserve(p->allocator->user, amount);
+	}
+	return CTB_MALLOC(amount);
+}
+
+CTB_INLINE void
+release(struct TINFLTPrvt* p, void* memory)
+{
+	if (p->allocator) {
+		p->allocator->release(p->allocator->user, memory);
+		return;
+	}
+	CTB_FREE(memory);
+}
+
+
+#define SETERROR(ERROR) (state->error = (ERROR))
 
 void
 inflator_reset(TInflator* state)
@@ -168,28 +194,26 @@ inflator_reset(TInflator* state)
 
 	PRVT->count = 0;
 	PRVT->end   = 0;
-}
 
-
-CTB_INLINE void*
-reserve(struct TINFLTPrvt* p, uintxx amount)
-{
-	if (p->allocator) {
-		return p->allocator->reserve(p->allocator->user, amount);
+	/* */
+	if (PRVT->window == NULL) {
+		PRVT->window = reserve(PRVT, WNDWSIZE);
+		if (PRVT->window == NULL) {
+			goto L_ERROR;
+		}
 	}
-	return CTB_MALLOC(amount);
-}
-
-CTB_INLINE void
-release(struct TINFLTPrvt* p, void* memory)
-{
-	if (p->allocator) {
-		p->allocator->release(p->allocator->user, memory);
-		return;
+	if (PRVT->tables == NULL) {
+		PRVT->tables = reserve(PRVT, sizeof(struct TTINFLTTables));
+		if (PRVT->tables == NULL) {
+			goto L_ERROR;
+		}
 	}
-	CTB_FREE(memory);
-}
+	return;
 
+L_ERROR:
+	SETERROR(INFLT_EOOM);
+	state->state = INFLT_BADSTATE;
+}
 
 void
 inflator_destroy(TInflator* state)
@@ -207,8 +231,6 @@ inflator_destroy(TInflator* state)
 	release(PRVT, state);
 }
 
-
-#define SETERROR(ERROR) (state->error = (ERROR))
 
 CTB_FORCEINLINE uint16
 reversecode(uint16 code, uintxx length)
@@ -567,25 +589,6 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 	return 0;
 }
 
-CTB_INLINE uintxx
-setuptables(struct TInflator* state)
-{
-	struct TTINFLTTables* tables;
-
-	if (PRVT->tables == NULL) {
-		tables = reserve(PRVT, sizeof(struct TTINFLTTables));
-		if (tables == NULL) {
-			SETERROR(INFLT_EOOM);
-			return INFLT_ERROR;
-		}
-		PRVT->tables = tables;
-	}
-
-	PRVT->ltable = PRVT->tables->symbols;
-	PRVT->dtable = PRVT->tables->symbols + ENOUGHL;
-	return 0;
-}
-
 
 #if defined(CTB_ENV64)
 	#define BBTYPE uint64
@@ -638,8 +641,9 @@ updatewindow(struct TInflator* state)
 	uintxx total;
 	uintxx maxrun;
 	uint8* begin;
+#if 0
 	uint8* buffer;
-
+#endif
 	total = (uintxx) (state->target - state->tbgn);
 	if (total == 0) {
 		return 0;
@@ -649,17 +653,6 @@ updatewindow(struct TInflator* state)
 		total = WNDWSIZE;
 	}
 	begin = state->target - total;
-
-	/* allocate the window buffer */
-	if (UNLIKELY(PRVT->window == NULL)) {
-		buffer = reserve(PRVT, WNDWSIZE);
-		if (buffer == NULL) {
-			SETERROR(INFLT_EOOM);
-			return INFLT_ERROR;
-		}
-		PRVT->window = buffer;
-	}
-
 	if (PRVT->count < WNDWSIZE) {
 		uintxx bytes;
 
@@ -1022,10 +1015,8 @@ decodednmc(struct TInflator* state)
 		case 2: goto L_STATE2;
 	}
 
-	r = setuptables(state);
-	if (r) {
-		return r;
-	}
+	PRVT->ltable = PRVT->tables->symbols;
+	PRVT->dtable = PRVT->tables->symbols + ENOUGHL;
 
 	if (tryreadbits(state, 14)) {
 		slcount = getbits(state, 5) + 257; dropbits(state, 5);
