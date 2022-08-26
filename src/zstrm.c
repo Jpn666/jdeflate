@@ -18,7 +18,6 @@
 #include "../deflator.h"
 #include "../inflator.h"
 #include <crypto/crc32.h>
-#include <string.h>
 
 
 #define ZIOBFFRSZ 8192

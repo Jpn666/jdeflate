@@ -15,7 +15,6 @@
  */
 
 #include "../deflator.h"
-#include <string.h>
 
 
 #if defined(AUTOINCLUDE_1)
