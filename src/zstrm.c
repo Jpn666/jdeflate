@@ -387,19 +387,19 @@ parsegziphead(struct TZStrm* state)
 	/* name, comment */
 	if (flags & 0x08)
 		while (fetchbyte(state));
-		if (flags & 0x10)
-			while (fetchbyte(state));
+	if (flags & 0x10)
+		while (fetchbyte(state));
 
-			/* header crc16 */
-			if (flags & 0x02) {
-				fetchbyte(state);
-				fetchbyte(state);
-			}
+	/* header crc16 */
+	if (flags & 0x02) {
+		fetchbyte(state);
+		fetchbyte(state);
+	}
 
-			if (state->error) {
-				return 0;
-			}
-			return 1;
+	if (state->error) {
+		return 0;
+	}
+	return 1;
 }
 
 #define TOI32(A, B, C, D)  ((A) | (B << 0x08) | (C << 0x10) | (D << 0x18))
