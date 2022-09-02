@@ -22,41 +22,54 @@
  * Stream oriented deflate and gzip encoder/decoder. */
 
 #include <ctoolbox.h>
-
-
-#define ZSTRM_MODEMASK 0x03
-#define ZSTRM_TYPEMASK 0x3c
+#include "deflator.h"
+#include "inflator.h"
 
 
 /* Stream mode */
 typedef enum {
 	ZSTRM_RMODE = 0x01,
-	ZSTRM_WMODE = 0x02,
+	ZSTRM_WMODE = 0x02
 } eZSTRMMode;
 
 
 /* Stream type */
 typedef enum {
-	ZSTRM_AUTO  = 0x04,
-	ZSTRM_DFLT  = 0x08,
-	ZSTRM_GZIP  = 0x10,
-	ZSTRM_ZLIB  = 0x20,
+	ZSTRM_DFLT = 0x04,
+	ZSTRM_ZLIB = 0x08,
+	ZSTRM_GZIP = 0x10,
+	ZSTRM_AUTO = ZSTRM_DFLT | ZSTRM_ZLIB | ZSTRM_GZIP
 } eZSTRMType;
+
+
+/* Extra flags */
+#define ZSTRM_DOCRC32 0x20
+#define ZSTRM_DOADLER 0x30
 
 
 /* Error codes */
 typedef enum {
-	ZSTRM_OK        = 0,
-	ZSTRM_EIOERROR  = 1,
-	ZSTRM_EOOM      = 2,
-	ZSTRM_EBADDATA  = 3,
-	ZSTRM_ECHECKSUM = 4,
-	ZSTRM_EDEFLATE  = 5,
-	ZSTRM_EINCORRECTUSE = 6
+	ZSTRM_OK             = 0,
+	ZSTRM_EIOERROR       = 1,
+	ZSTRM_EOOM           = 2,
+	ZSTRM_EBADDATA       = 3,
+	ZSTRM_ECHECKSUM      = 4,
+	ZSTRM_EFORMAT        = 5,
+	ZSTRM_EDEFLATE       = 6,
+	ZSTRM_EMISSINGDICT   = 7,
+	ZSTRM_EINCORRECTDICT = 8,
+	ZSTRM_EINCORRECTUSE  = 9
 } eZSTRMError;
 
 
-#define ZSTRM_BADSTATE 0xDEADBEEF
+/* State */
+typedef enum {
+	ZSTRM_NOTSET   = 0,
+	ZSTRM_READY    = 1,
+	ZSTRM_NEEDDICT = 2,
+	ZSTRM_NORMAL   = 3,
+	ZSTRM_END      = 4
+} eZSTRMState;
 
 
 /*
@@ -67,7 +80,50 @@ typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
 
 
 /* */
-struct TZStrm;
+struct TZStrm {
+	/* state */
+	uintxx state;
+	uintxx error;
+	uintxx flags;
+	uintxx smode;  /* eZSTRMMode */
+	uintxx stype;  /* eZSTRMType */
+	uintxx mtype;
+
+	/* dictionary id (adler32 checksum) */
+	uint32 dictid;
+	uintxx dict;
+
+	/* checksums */
+	uintxx docrc32;
+	uintxx doadler;
+	uint32 crc32;
+	uint32 adler;
+
+	uintxx level;
+	uintxx total;
+	uintxx result;
+
+	struct TDeflator* defltr;
+	struct TInflator* infltr;
+
+	/* IO callback */
+	TZStrmIOFn iofn;
+
+	/* IO callback parameter */
+	void* payload;
+
+	/* buffers */
+	uint8* source;
+	uint8* target;
+	uint8* sbgn;
+	uint8* send;
+	uint8* tbgn;
+	uint8* tend;
+
+	/* custom allocator */
+	struct TAllocator* allocator;
+};
+
 typedef struct TZStrm TZStrm;
 
 
@@ -89,27 +145,19 @@ void zstrm_setiofn(TZStrm*, TZStrmIOFn fn, void* payload);
 
 /*
  * */
+void zstrm_setdctn(TZStrm*, uint8* dict, uintxx size);
+
+/*
+ *  */
+void zstrm_flush(TZStrm*, bool final);
+
+/*
+ * */
 uintxx zstrm_r(TZStrm*, uint8* buffer, uintxx size);
 
 /*
  * */
 uintxx zstrm_w(TZStrm*, uint8* buffer, uintxx size);
-
-/*
- *  */
-bool zstrm_flush(TZStrm*);
-
-/*
- * */
-bool zstrm_endstream(TZStrm*);
-
-/*
- * */
-bool zstrm_eof(TZStrm*);
-
-/*
- * */
-eZSTRMError zstrm_geterror(TZStrm*);
 
 
 #endif

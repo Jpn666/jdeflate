@@ -15,46 +15,11 @@
  */
 
 #include "../zstrm.h"
-#include "../deflator.h"
-#include "../inflator.h"
 #include <crypto/crc32.h>
+#include <crypto/adler32.h>
 
 
 #define ZIOBFFRSZ 8192
-
-
-/* */
-struct TZStrm {
-	/* state */
-	uintxx state;
-	uintxx stype;  /* stream type */
-	uintxx smode;  /* autodetected type of stream */
-	uintxx error;
-	uint32 crc32;
-	uint32 fsize;
-	uintxx level;  /* deflator level */
-	uintxx aux1;
-
-	struct TDeflator* defltr;
-	struct TInflator* infltr;
-
-	/* IO callback */
-	TZStrmIOFn iofn;
-
-	/* IO callback parameter */
-	void* payload;
-
-	/* buffers */
-	uint8* source;
-	uint8* target;
-	uint8* sbgn;
-	uint8* send;
-	uint8* tbgn;
-	uint8* tend;
-
-	/* custom allocator */
-	struct TAllocator* allocator;
-};
 
 
 CTB_INLINE void*
@@ -77,6 +42,9 @@ release(struct TZStrm* p, void* memory)
 }
 
 
+#define ZSTRM_MODEMASK 0x03
+#define ZSTRM_TYPEMASK 0x1c
+
 TZStrm*
 zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 {
@@ -94,15 +62,8 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 			/* invalid mode */
 			return NULL;
 	}
-
-	switch (type) {
-		case ZSTRM_DFLT:
-		case ZSTRM_GZIP:
-		case ZSTRM_AUTO:
-			break;
-		default:
-			/* invalid mode */
-			return NULL;
+	if (type == 0) {
+		return NULL;
 	}
 
 	if (mode == ZSTRM_WMODE) {
@@ -111,8 +72,13 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 			return NULL;
 		}
 
-		if (type == ZSTRM_AUTO) {
-			/* auto stream type in compression mode */
+		if ((type & ZSTRM_DFLT) && (type & ~ZSTRM_DFLT)) {
+			return NULL;
+		}
+		if ((type & ZSTRM_ZLIB) && (type & ~ZSTRM_ZLIB)) {
+			return NULL;
+		}
+		if ((type & ZSTRM_GZIP) && (type & ~ZSTRM_GZIP)) {
 			return NULL;
 		}
 	}
@@ -158,7 +124,19 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 		}
 	}
 
-	state->stype = type;
+	state->smode = mode;
+	state->mtype = type;
+	if (mode == ZSTRM_WMODE) {
+		state->stype = type;
+		if (flags & ZSTRM_DOCRC32) state->docrc32 = 1;
+		if (flags & ZSTRM_DOADLER) state->doadler = 1;
+
+		if (type ^ ZSTRM_DFLT) {
+			if (type & ZSTRM_GZIP) state->docrc32 = 1;
+			if (type & ZSTRM_ZLIB) state->doadler = 1;
+		}
+	}
+	state->flags = flags;
 	zstrm_reset(state);
 	return state;
 }
@@ -187,12 +165,25 @@ zstrm_reset(TZStrm* state)
 {
 	ASSERT(state);
 
-	state->state = 0;
-	state->error = 0;
-	state->fsize = 0;
-	state->aux1  = 0;
-	state->smode = state->stype;
+	state->state  = 0;
+	state->error  = 0;
+	if (state->smode == ZSTRM_RMODE) {
+		state->stype = 0;
+	}
 
+	state->dictid = 0;
+	state->dict   = 0;
+	if (state->smode == ZSTRM_RMODE) {
+		state->docrc32 = 0;
+		state->doadler = 0;
+		if (state->flags & ZSTRM_DOCRC32) state->docrc32 = 1;
+		if (state->flags & ZSTRM_DOADLER) state->doadler = 1;
+	}
+	state->crc32 = 0xffffffff;
+	state->adler = 1;
+	state->total = 0;
+
+	state->result = 0;
 	state->iofn    = NULL;
 	state->payload = NULL;
 
@@ -200,6 +191,8 @@ zstrm_reset(TZStrm* state)
 	state->send   = state->sbgn;
 	state->target = state->tbgn;
 	state->tend   = state->tbgn;
+	state->sbgn[0] = 0x07;  /* invalid stream */
+	state->tbgn[0] = 0x00;
 	if (state->infltr) {
 		inflator_reset(state->infltr);
 	}
@@ -208,16 +201,6 @@ zstrm_reset(TZStrm* state)
 		state->tend += ZIOBFFRSZ;
 		deflator_reset(state->defltr, state->level);
 	}
-
-	CRC32_INIT(state->crc32);
-}
-
-eZSTRMError
-zstrm_geterror(TZStrm* state)
-{
-	ASSERT(state);
-
-	return state->error;
 }
 
 
@@ -230,14 +213,106 @@ zstrm_setiofn(TZStrm* state, TZStrmIOFn fn, void* payload)
 	ASSERT(state);
 
 	if (state->state) {
-		SETSTATE(ZSTRM_BADSTATE);
+		SETSTATE(4);
 		if (state->error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
+		return;
 	}
-	state->iofn = fn;
+	SETSTATE(1);
+
+	state->iofn    = fn;
 	state->payload = payload;
 }
+
+
+static uintxx parsehead(TZStrm* state);
+
+void
+zstrm_setdctn(TZStrm* state, uint8* dict, uintxx size)
+{
+	uint32 adler;
+	ASSERT(state);
+
+	if (state->state == 0 || state->state == 4) {
+		if (state->state == 4) {
+			return;
+		}
+		goto L_ERROR;
+	}
+
+	if (state->smode == ZSTRM_RMODE) {
+		if (state->state == 1) {
+			if (parsehead(state) == 0) {
+				goto L_ERROR;
+			}
+		}
+
+		if (state->stype == ZSTRM_GZIP) {
+			goto L_ERROR;
+		}
+		adler = adler32_update(1, dict, size);
+		if (state->state == 2) {
+			if (adler ^ state->dictid) {
+				SETERROR(ZSTRM_EINCORRECTDICT);
+				goto L_ERROR;
+			}
+		}
+		else {
+			state->dictid = adler;
+		}
+		SETSTATE(3);
+		inflator_setdctnr(state->infltr, dict, size);
+	}
+
+	if (state->smode == ZSTRM_WMODE) {
+		if (state->state ^ 1) {
+			if (state->state == 4) {
+				return;
+			}
+			goto L_ERROR;
+		}
+		if (state->stype & ZSTRM_GZIP || state->dict == 1) {
+			goto L_ERROR;
+		}
+
+		state->dictid = adler32_update(1, dict, size);;
+		state->dict   = 1;
+		deflator_setdctnr(state->defltr, dict, size);
+	}
+	return;
+
+	L_ERROR:
+	if (state->error == 0)
+		SETERROR(ZSTRM_EINCORRECTUSE);
+	SETSTATE(4);
+}
+
+uintxx
+zstrm_getstate(TZStrm* state, uintxx* error)
+{
+	ASSERT(state);
+
+	if (state->state == 1) {
+		if (state->smode == ZSTRM_RMODE) {
+			if (parsehead(state) == 0) {
+				SETSTATE(4);
+				goto L_ERROR;
+			}
+
+			if (state->state == 2) {
+				return state->state;
+			}
+			SETSTATE(3);
+		}
+	}
+
+	L_ERROR:
+	if (error)
+		error[0] = state->error;
+	return state->state;
+}
+
 
 CTB_INLINE uint8
 fetchbyte(struct TZStrm* state)
@@ -247,23 +322,28 @@ fetchbyte(struct TZStrm* state)
 	if (LIKELY(state->source < state->send)) {
 		return *state->source++;
 	}
-	r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
-	if (LIKELY(r)) {
-		if ((uintxx) r > ZIOBFFRSZ) {
-			SETERROR(ZSTRM_EIOERROR);
-			return 0;
-		}
-		state->source = state->sbgn;
-		state->send   = state->sbgn + r;
-		return *state->source++;
-	}
 
+	if (state->error == 0) {
+		r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
+		if (LIKELY(r)) {
+			if ((uintxx) r > ZIOBFFRSZ) {
+				SETERROR(ZSTRM_EIOERROR);
+				return 0;
+			}
+			state->source = state->sbgn;
+			state->send   = state->sbgn + r;
+			return *state->source++;
+		}
+	}
+	else {
+		return 0;
+	}
 	SETERROR(ZSTRM_EBADDATA);
 	return 0;
 }
 
-static bool
-readheader(struct TZStrm* state)
+static uintxx
+parsegziphead(struct TZStrm* state)
 {
 	uint8 id1;
 	uint8 id2;
@@ -272,13 +352,15 @@ readheader(struct TZStrm* state)
 	id1 = fetchbyte(state);
 	id2 = fetchbyte(state);
 	if (id1 != 0x1f || id2 != 0x8b) {
-		SETERROR(ZSTRM_EBADDATA);
+		if (state->error == 0)
+			SETERROR(ZSTRM_EBADDATA);
 		return 0;
 	}
 
 	/* compression method (deflate only) */
 	if (fetchbyte(state) != 0x08) {
-		SETERROR(ZSTRM_EBADDATA);
+		if (state->error == 0)
+			SETERROR(ZSTRM_EBADDATA);
 		return 0;
 	}
 
@@ -303,26 +385,138 @@ readheader(struct TZStrm* state)
 	}
 
 	/* name, comment */
-	if (flags & 0x08) while (fetchbyte(state));
-	if (flags & 0x10) while (fetchbyte(state));
+	if (flags & 0x08)
+		while (fetchbyte(state));
+		if (flags & 0x10)
+			while (fetchbyte(state));
 
-	/* header crc16 */
-	if (flags & 0x02) {
-		fetchbyte(state);
-		fetchbyte(state);
+			/* header crc16 */
+			if (flags & 0x02) {
+				fetchbyte(state);
+				fetchbyte(state);
+			}
+
+			if (state->error) {
+				return 0;
+			}
+			return 1;
+}
+
+#define TOI32(A, B, C, D)  ((A) | (B << 0x08) | (C << 0x10) | (D << 0x18))
+
+static uintxx
+parsezlibhead(struct TZStrm* state)
+{
+	uint8 a;
+	uint8 b;
+
+	a = fetchbyte(state);
+	b = fetchbyte(state);
+	if (state->error == 0) {
+		uintxx cm;
+		uintxx ci;
+
+		/* CM and CINFO */
+		cm = (a >> 0) & 0x0f;
+		ci = (a >> 4) & 0x0f;
+		if (cm == 8 && ci <= 7) {
+			uintxx fchck;
+			uintxx fdict;
+
+			/* FLG (FLaGs) */
+			fchck = (b >> 0) & 0x1f;
+			fdict = (b >> 5) & 0x01;
+			(void) fchck;
+			if (fdict) {
+				uint8 c;
+				uint8 d;
+
+				d = fetchbyte(state);
+				c = fetchbyte(state);
+				b = fetchbyte(state);
+				a = fetchbyte(state);
+				if (state->error) {
+					return 0;
+				}
+				state->dictid = TOI32(a, b, c, d);
+
+				SETSTATE(2);
+				return 1;
+			}
+		}
+		else {
+			if (state->error == 0)
+				SETERROR(ZSTRM_EBADDATA);
+			return 0;
+		}
 	}
-
-	if (state->error) {
+	else {
 		return 0;
 	}
+
 	return 1;
 }
 
-CTB_INLINE bool
-checktail(struct TZStrm* state)
+static uintxx
+parsehead(struct TZStrm* state)
+{
+	uintxx type;
+	uint8 head;
+
+	head = fetchbyte(state);
+	if (state->error) {
+		return 0;
+	}
+
+	type = 0;
+	if (head == 0x1f) {
+		type = ZSTRM_GZIP;
+	}
+	else {
+		head = head & 0x0f;
+		if (head == 0x08) {
+			type = ZSTRM_ZLIB;
+		}
+		else {
+			if (head == 0x06 || head == 0x07) {
+				/* invalid block type 11 (reserved) */
+				SETERROR(ZSTRM_EBADDATA);
+				return 0;
+			}
+			type = ZSTRM_DFLT;
+		}
+	}
+
+	if ((state->mtype & type) == 0) {
+		SETERROR(ZSTRM_EFORMAT);
+		return 0;
+	}
+	else {
+		state->stype = type;
+	}
+
+	state->source--;
+	switch (state->stype) {
+		case ZSTRM_GZIP: state->docrc32 = 1; parsegziphead(state); break;
+		case ZSTRM_ZLIB: state->doadler = 1; parsezlibhead(state); break;
+		case ZSTRM_DFLT:
+			break;
+	}
+	if (state->error) {
+		return 0;
+	}
+
+	inflator_setsrc(state->infltr, state->source, state->send - state->source);
+	state->result = INFLT_TGTEXHSTD;
+	return 1;
+}
+
+
+CTB_INLINE void
+checkgziptail(struct TZStrm* state)
 {
 	uint32 crc32;
-	uint32 fsize;
+	uint32 total;
 	uint8 a;
 	uint8 b;
 	uint8 c;
@@ -333,17 +527,16 @@ checktail(struct TZStrm* state)
 	b = fetchbyte(state);
 	c = fetchbyte(state);
 	d = fetchbyte(state);
-	crc32 = (a << 0x00) | (b << 0x08) | (c << 0x10) | (d << 0x18);
+	crc32 = TOI32(a, b, c, d);
 
-	if (state->error) {
-		return 0;
-	}
-	else {
-
+	if (state->error == 0) {
 		if (crc32 != state->crc32) {
 			SETERROR(ZSTRM_ECHECKSUM);
-			return 0;
+			return;
 		}
+	}
+	else {
+		return;
 	}
 
 	/* isize */
@@ -351,25 +544,43 @@ checktail(struct TZStrm* state)
 	b = fetchbyte(state);
 	c = fetchbyte(state);
 	d = fetchbyte(state);
+	total = TOI32(a, b, c, d);
 
-	fsize = (a << 0x00) | (b << 0x08) | (c << 0x10) | (d << 0x18);
-	if (state->error) {
-		return 0;
-	}
-	else {
-		if (fsize != state->fsize) {
-			SETERROR(ZSTRM_EBADDATA);
-			return 0;
+	if (total != state->total) {
+		if (state->error) {
+			return;
 		}
+		SETERROR(ZSTRM_EBADDATA);
 	}
-	return 1;
 }
 
+CTB_INLINE void
+checkzlibtail(struct TZStrm* state)
+{
+	uint8 a;
+	uint8 b;
+	uint8 c;
+	uint8 d;
+	uint32 adler;
 
-#define sresult state->aux1
+	/* tail */
+	d = fetchbyte(state);
+	c = fetchbyte(state);
+	b = fetchbyte(state);
+	a = fetchbyte(state);
+	adler = TOI32(a, b, c, d);
+	if (adler != state->adler) {
+		if (state->error == 0)
+			SETERROR(ZSTRM_ECHECKSUM);
+		return;
+	}
+}
+
+#undef TOI32
+
 
 static uintxx
-inflate(TZStrm* state, uint8* buffer, uintxx size)
+inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 {
 	uintxx n;
 	uintxx maxrun;
@@ -398,61 +609,70 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 			continue;
 		}
 
-		if (LIKELY(sresult == INFLT_SRCEXHSTD)) {
+		if (LIKELY(state->result == INFLT_SRCEXHSTD)) {
 			intxx r;
 
 			r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
 			if (LIKELY(r)) {
 				if (UNLIKELY((uintxx) r > ZIOBFFRSZ)) {
 					SETERROR(ZSTRM_EIOERROR);
-					SETSTATE(ZSTRM_BADSTATE);
+					SETSTATE(4);
 					return 0;
 				}
 
-				state->source = state->send = state->sbgn;
-				state->send  += r;
+				state->source = state->sbgn;
+				state->send   = state->send + r;
 				inflator_setsrc(state->infltr, state->sbgn, r);
 			}
 			else {
 				SETERROR(ZSTRM_EBADDATA);
-				SETSTATE(ZSTRM_BADSTATE);
+				SETSTATE(4);
 				return 0;
 			}
 		}
 		else {
-			if (UNLIKELY(sresult == INFLT_OK)) {
+			if (UNLIKELY(state->result == INFLT_OK)) {
 				/* end of the stream */
 				state->source += inflator_srcend(state->infltr);
 
-				if (state->smode == ZSTRM_GZIP) {
+				if (state->docrc32)
 					CRC32_FINALIZE(state->crc32);
-					if (checktail(state) == 0) {
-						SETSTATE(ZSTRM_BADSTATE);
-						return 0;
-					}
+
+				switch (state->stype) {
+					case ZSTRM_GZIP:
+						checkgziptail(state);
+						break;
+					case ZSTRM_ZLIB:
+						checkzlibtail(state);
+						break;
 				}
-				SETSTATE(3);
+				SETSTATE(4);
+				if (state->error) {
+					return 0;
+				}
 				break;
 			}
 		}
 
 		inflator_settgt(state->infltr, state->tbgn, ZIOBFFRSZ);
-		sresult = inflator_inflate(state->infltr, 0);
-		n = inflator_tgtend(state->infltr);
-
-		target = tend = state->tbgn;
-		tend  += n;
-
-		if (LIKELY(state->smode == ZSTRM_GZIP)) {
-			state->crc32 = crc32_update(state->crc32, target, n);
-			state->fsize = state->fsize + (uint32) n;
-		}
-
-		if (UNLIKELY(sresult == INFLT_ERROR)) {
+		state->result = inflator_inflate(state->infltr, 0);
+		if (UNLIKELY(state->result == INFLT_ERROR)) {
 			SETERROR(ZSTRM_EDEFLATE);
-			SETSTATE(ZSTRM_BADSTATE);
+			SETSTATE(4);
 			return 0;
 		}
+
+		n = inflator_tgtend(state->infltr);
+		target = state->tbgn;
+		tend   = state->tbgn + n;
+
+		/* update the checksums */
+		if (LIKELY(state->docrc32))
+			state->crc32 =   crc32_update(state->crc32, target, n);
+		if (LIKELY(state->doadler)) {
+			state->adler = adler32_update(state->adler, target, n);
+		}
+		state->total += n;
 	}
 
 	state->target = target;
@@ -463,66 +683,50 @@ inflate(TZStrm* state, uint8* buffer, uintxx size)
 uintxx
 zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 {
-	uintxx total;
 	ASSERT(state);
 
 	/* check the stream mode */
 	if (UNLIKELY(state->infltr == NULL)) {
-		SETSTATE(ZSTRM_BADSTATE);
+		SETSTATE(4);
 		if (state->error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
-
-	if (LIKELY(state->state == 1)) {
+	if (LIKELY(state->state == 3)) {
 		return inflate(state, buffer, size);
 	}
-	if (LIKELY(state->state == 0)) {
+
+	if (state->state == 1) {
 		if (UNLIKELY(state->iofn == NULL)) {
-			SETSTATE(ZSTRM_BADSTATE);
+			SETSTATE(4);
 			SETERROR(ZSTRM_EIOERROR);
 			return 0;
 		}
 
-		if (state->smode == ZSTRM_GZIP || state->smode == ZSTRM_AUTO) {
-			if (readheader(state) == 0) {
-				if (state->smode == ZSTRM_AUTO) {
-					state->source = state->sbgn;
-
-					if (state->sbgn[0] == 0x1f && state->sbgn[1] == 0x8b) {
-						SETSTATE(ZSTRM_BADSTATE);
-						return 0;
-					}
-					SETERROR(0);
-					state->smode = ZSTRM_DFLT;
-				}
-				else {
-					SETSTATE(ZSTRM_BADSTATE);
-					return 0;
-				}
-			}
-			else {
-				if (state->smode == ZSTRM_AUTO) {
-					state->smode = ZSTRM_GZIP;
-				}
-			}
-
-			total = state->send - state->source;
-			inflator_setsrc(state->infltr, state->source, total);
-			sresult = INFLT_TGTEXHSTD;
+		if (parsehead(state) == 0) {
+			SETSTATE(4);
 		}
 		else {
-			sresult = INFLT_SRCEXHSTD;
+			if (state->state == 2) {
+				SETERROR(ZSTRM_EMISSINGDICT);
+			}
 		}
 
-		SETSTATE(1);
-		return zstrm_r(state, buffer, size);
+		if (state->error) {
+			SETSTATE(4);
+			return 0;
+		}
+		SETSTATE(3);
+		return inflate(state, buffer, size);
+	}
+
+	if (state->state == 2) {
+		SETERROR(ZSTRM_EMISSINGDICT);
+		SETSTATE(4);
 	}
 	return 0;
 }
-
-#undef sresult
 
 
 CTB_INLINE void
@@ -546,20 +750,22 @@ emittarget(struct TZStrm* state, uintxx count)
 static void
 emitbyte(struct TZStrm* state, uint8 value)
 {
-	if (LIKELY(state->target < state->tend)) {
-		*state->target++ = value;
-	}
-	else {
-		emittarget(state, (uintxx) (state->target - state->tbgn));
-		if (UNLIKELY(state->error)) {
-			return;
+	if (LIKELY(state->error == 0)) {
+		if (LIKELY(state->target < state->tend)) {
+			*state->target++ = value;
 		}
-		*state->target++ = value;
+		else {
+			emittarget(state, (uintxx) (state->target - state->tbgn));
+			if (UNLIKELY(state->error)) {
+				return;
+			}
+			*state->target++ = value;
+		}
 	}
 }
 
-static bool
-emitheader(struct TZStrm* state)
+CTB_INLINE void
+emitgziphead(struct TZStrm* state)
 {
 	/* file ID */
 	emitbyte(state, 0x1f);
@@ -577,11 +783,38 @@ emitheader(struct TZStrm* state)
 	emitbyte(state, 0x00);
 
 	emittarget(state, (uintxx) (state->target - state->tbgn));
-	if (state->error) {
-		return 0;
-	}
-	return 1;
 }
+
+CTB_INLINE void
+emitzlibhead(struct TZStrm* state)
+{
+	uintxx a;
+	uintxx b;
+
+	/* compression method + log(window size) - 8 */
+	a = 0x78;
+	b = 0;
+	if (state->dict) {
+		b |= 1 << 5;
+	}
+
+	/* fcheck */
+	b = b + (31 - ((a << 8) | b % 31));
+
+	emitbyte(state, (uint8) a);
+	emitbyte(state, (uint8) b);
+	if (state->dict) {
+		uint32 n;
+
+		n = state->dictid;
+		emitbyte(state, (uint8) (n >> 0x18));
+		emitbyte(state, (uint8) (n >> 0x10));
+		emitbyte(state, (uint8) (n >> 0x08));
+		emitbyte(state, (uint8) (n >> 0x00));
+	}
+	emittarget(state, (uintxx) (state->target - state->tbgn));
+}
+
 
 static uintxx
 deflate(TZStrm* state, uint8* buffer, uintxx size)
@@ -591,11 +824,12 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 	uint8* bbegin;
 	uint8* source;
 	uint8* send;
+	uint8* sbgn;
 
 	source = state->source;
 	send   = state->send;
+	sbgn   = state->sbgn;
 	bbegin = buffer;
-
 	while (LIKELY(size)) {
 		maxrun = (uintxx) (send - source);
 		if (LIKELY(maxrun)) {
@@ -613,11 +847,15 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 			continue;
 		}
 
-		deflator_setsrc(state->defltr, state->sbgn, ZIOBFFRSZ);
-		if (LIKELY(state->smode == ZSTRM_GZIP)) {
-			state->crc32 = crc32_update(state->crc32, state->sbgn, ZIOBFFRSZ);
-			state->fsize = state->fsize + ZIOBFFRSZ;
+		deflator_setsrc(state->defltr, sbgn, ZIOBFFRSZ);
+
+		/* update the checksums */
+		if (LIKELY(state->docrc32))
+			state->crc32 =   crc32_update(state->crc32, sbgn, ZIOBFFRSZ);
+		if (LIKELY(state->doadler)) {
+			state->adler = adler32_update(state->adler, sbgn, ZIOBFFRSZ);
 		}
+		state->total += ZIOBFFRSZ;
 
 		do {
 			deflator_settgt(state->defltr, state->tbgn, ZIOBFFRSZ);
@@ -625,7 +863,7 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 
 			emittarget(state, deflator_tgtend(state->defltr));
 			if (UNLIKELY(state->error)) {
-				SETSTATE(ZSTRM_BADSTATE);
+				SETSTATE(4);
 				return 0;
 			}
 		} while (r == DEFLT_TGTEXHSTD);
@@ -637,9 +875,6 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 	return (uintxx) (buffer - bbegin);
 }
 
-
-#define sflushmode state->aux1
-
 uintxx
 zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 {
@@ -647,155 +882,132 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 
 	/* check the stream mode */
 	if (UNLIKELY(state->defltr == NULL)) {
-		SETSTATE(ZSTRM_BADSTATE);
+		SETSTATE(4);
 		if (state->error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
 
-	if (LIKELY(state->state == 1)) {
+	if (LIKELY(state->state == 3)) {
 		return deflate(state, buffer, size);
 	}
-	if (LIKELY(state->state == 0)) {
+	if (LIKELY(state->state == 1 || state->state == 2)) {
 		if (UNLIKELY(state->iofn == NULL)) {
-			SETSTATE(ZSTRM_BADSTATE);
 			SETERROR(ZSTRM_EIOERROR);
+			SETSTATE(4);
 			return 0;
 		}
 
-		if (state->smode == ZSTRM_GZIP) {
-			if (emitheader(state) == 0) {
-				SETSTATE(ZSTRM_BADSTATE);
-				return 0;
-			}
+		switch (state->stype) {
+			case ZSTRM_GZIP: emitgziphead(state); break;
+			case ZSTRM_ZLIB: emitzlibhead(state); break;
 		}
-		sflushmode = DEFLT_FLUSH;
-		SETSTATE(1);
+		if (state->error) {
+			SETSTATE(4);
+			return 0;
+		}
+		SETSTATE(3);
 
-		return zstrm_w(state, buffer, size);
+		return deflate(state, buffer, size);
 	}
 	return 0;
 }
 
-bool
-zstrm_flush(TZStrm* state)
+static void
+flush(TZStrm* state, uintxx flush)
 {
 	uintxx total;
 	uintxx r;
-	ASSERT(state);
-
-	if (state->defltr == NULL || state->state != 1) {
-		return 0;
-	}
 
 	total = (uintxx) (state->source - state->sbgn);
 	if (total) {
 		deflator_setsrc(state->defltr, state->sbgn, total);
-		if (LIKELY(state->smode == ZSTRM_GZIP)) {
-			state->crc32 = crc32_update(state->crc32, state->sbgn, total);
-			state->fsize = state->fsize + (uint32)total;
+
+		/* update the checksums */
+		if (LIKELY(state->docrc32))
+			state->crc32 =   crc32_update(state->crc32, state->sbgn, total);
+		if (LIKELY(state->doadler)) {
+			state->adler = adler32_update(state->adler, state->sbgn, total);
 		}
+		state->total += total;
 	}
 
 	do {
 		deflator_settgt(state->defltr, state->tbgn, ZIOBFFRSZ);
-		r = deflator_deflate(state->defltr, sflushmode);
+		r = deflator_deflate(state->defltr, flush);
 
 		emittarget(state, deflator_tgtend(state->defltr));
 		if (UNLIKELY(state->error)) {
-			SETSTATE(ZSTRM_BADSTATE);
-			return 0;
+			SETSTATE(4);
+			return;
 		}
 	} while (r == DEFLT_TGTEXHSTD);
-
-	return 1;
 }
 
-bool
-zstrm_endstream(TZStrm* state)
+CTB_INLINE void
+emitgziptail(struct TZStrm* state)
+{
+	uint32 n;
+
+	CRC32_FINALIZE(state->crc32);
+	n = state->crc32;
+	emitbyte(state, (uint8) (n >> 0x00));
+	emitbyte(state, (uint8) (n >> 0x08));
+	emitbyte(state, (uint8) (n >> 0x10));
+	emitbyte(state, (uint8) (n >> 0x18));
+
+	n = (uint32) state->total;
+	emitbyte(state, (uint8) (n >> 0x00));
+	emitbyte(state, (uint8) (n >> 0x08));
+	emitbyte(state, (uint8) (n >> 0x10));
+	emitbyte(state, (uint8) (n >> 0x18));
+	emittarget(state, (uintxx) (state->target - state->tbgn));
+}
+
+CTB_INLINE void
+emitzlibtail(struct TZStrm* state)
+{
+	uint32 n;
+
+	n = state->adler;
+	emitbyte(state, (uint8) (n >> 0x18));
+	emitbyte(state, (uint8) (n >> 0x10));
+	emitbyte(state, (uint8) (n >> 0x08));
+	emitbyte(state, (uint8) (n >> 0x00));
+	emittarget(state, (uintxx) (state->target - state->tbgn));
+}
+
+void
+zstrm_flush(TZStrm* state, bool final)
 {
 	ASSERT(state);
 
-	if (state->defltr) {
-		if (state->state == 3 || state->state == ZSTRM_BADSTATE) {
-			return 0;
+	if (UNLIKELY(state->defltr == NULL || state->state ^ 3)) {
+		if (state->infltr) {
+			SETERROR(ZSTRM_EINCORRECTUSE);
+			SETSTATE(4);
 		}
-
-		if (state->state == 0) {
-			if (state->iofn == NULL) {
-				SETSTATE(ZSTRM_BADSTATE);
-				SETSTATE(ZSTRM_EIOERROR);
-				return 0;
-			}
-
-			if (state->smode == ZSTRM_GZIP) {
-				if (emitheader(state) == 0) {
-					SETSTATE(ZSTRM_BADSTATE);
-					return 0;
-				}
-			}
-			SETSTATE(1);
-		}
-		if (state->state == 1) {
-			sflushmode = DEFLT_END;
-			zstrm_flush(state);
-			if (state->error) {
-				goto L_ERROR;
-			}
-
-			if (state->smode == ZSTRM_GZIP) {
-				/* gzip tail */
-				uint32 n;
-
-				CRC32_FINALIZE(state->crc32);
-				n = state->crc32;
-				emitbyte(state, (uint8) (n >> 0x00));
-				emitbyte(state, (uint8) (n >> 0x08));
-				emitbyte(state, (uint8) (n >> 0x10));
-				emitbyte(state, (uint8) (n >> 0x18));
-
-				n = state->fsize;
-				emitbyte(state, (uint8) (n >> 0x00));
-				emitbyte(state, (uint8) (n >> 0x08));
-				emitbyte(state, (uint8) (n >> 0x10));
-				emitbyte(state, (uint8) (n >> 0x18));
-				emittarget(state, (uintxx) (state->target - state->tbgn));
-				if (state->error) {
-					goto L_ERROR;
-				}
-			}
-
-			SETSTATE(3);
-		}
-		return 1;
+		return;
 	}
 
-	if (state->infltr) {
-		SETERROR(ZSTRM_EINCORRECTUSE);
-		goto L_ERROR;
-	}
+	if (final) {
+		flush(state, DEFLT_END);
+		if (state->error) {
+			return;
+		}
 
-L_ERROR:
-	SETSTATE(ZSTRM_BADSTATE);
-	return 0;
+		switch (state->stype) {
+			case ZSTRM_GZIP: emitgziptail(state); break;
+			case ZSTRM_ZLIB: emitzlibtail(state); break;
+		}
+		SETSTATE(4);
+	}
+	else {
+		flush(state, DEFLT_FLUSH);
+		if (state->error) {
+			return;
+		}
+	}
 }
 
-bool
-zstrm_eof(TZStrm* state)
-{
-	ASSERT(state);
-
-	if (state->infltr) {
-		if (state->state == 3 || state->state == ZSTRM_BADSTATE) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-
-#undef sflushmode
-
-#undef SETSTATE
-#undef SETERROR
