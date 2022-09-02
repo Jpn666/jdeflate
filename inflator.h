@@ -113,10 +113,6 @@ CTB_INLINE uintxx inflator_tgtend(TInflator*);
 
 /*
  * */
-CTB_INLINE eINFLTError inflator_geterror(TInflator*);
-
-/*
- * */
 eINFLTResult inflator_inflate(TInflator*, uintxx final);
 
 /*
@@ -171,14 +167,6 @@ inflator_tgtend(TInflator* state)
 	ASSERT(state);
 
 	return (uintxx) (state->target - state->tbgn);
-}
-
-CTB_INLINE eINFLTError
-inflator_geterror(TInflator* state)
-{
-	ASSERT(state);
-
-	return state->error;
 }
 
 #endif

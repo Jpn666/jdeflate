@@ -116,10 +116,6 @@ CTB_INLINE uintxx deflator_tgtend(TDeflator*);
 
 /*
  * */
-CTB_INLINE eDEFLTError deflator_geterror(TDeflator*);
-
-/*
- * */
 eDEFLTResult deflator_deflate(TDeflator*, eDEFLTFlush flush);
 
 /*
@@ -174,14 +170,6 @@ deflator_tgtend(TDeflator* state)
 	ASSERT(state);
 
 	return (uintxx) (state->target - state->tbgn);
-}
-
-CTB_INLINE eDEFLTError
-deflator_geterror(TDeflator* state)
-{
-	ASSERT(state);
-
-	return state->error;
 }
 
 #endif
