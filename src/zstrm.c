@@ -307,7 +307,7 @@ zstrm_getstate(TZStrm* state, uintxx* error)
 		}
 	}
 
-	L_ERROR:
+L_ERROR:
 	if (error)
 		error[0] = state->error;
 	return state->state;
