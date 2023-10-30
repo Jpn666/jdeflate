@@ -15,6 +15,7 @@
  */
 
 #include "../inflator.h"
+#include <cmemory.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -120,7 +121,7 @@ inflator_create(TAllocator* allocator)
 		state = allocator->reserve(allocator->user, sizeof(struct TINFLTPrvt));
 	}
 	else {
-		state = CTB_MALLOC(sizeof(struct TINFLTPrvt));
+		state = ctb_reserve(sizeof(struct TINFLTPrvt));
 	}
 	if (state == NULL) {
 		return NULL;
@@ -138,22 +139,22 @@ inflator_create(TAllocator* allocator)
 }
 
 CTB_INLINE void*
-reserve(struct TINFLTPrvt* p, uintxx amount)
+_reserve(struct TINFLTPrvt* p, uintxx amount)
 {
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return CTB_MALLOC(amount);
+	return ctb_reserve(amount);
 }
 
 CTB_INLINE void
-release(struct TINFLTPrvt* p, void* memory)
+_release(struct TINFLTPrvt* p, void* memory)
 {
 	if (p->allocator) {
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	CTB_FREE(memory);
+	ctb_release(memory);
 }
 
 
@@ -162,7 +163,7 @@ release(struct TINFLTPrvt* p, void* memory)
 void
 inflator_reset(TInflator* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	/* public fields */
 	state->state = 0;
@@ -196,13 +197,13 @@ inflator_reset(TInflator* state)
 
 	/* */
 	if (PRVT->window == NULL) {
-		PRVT->window = reserve(PRVT, WNDWSIZE);
+		PRVT->window = _reserve(PRVT, WNDWSIZE);
 		if (PRVT->window == NULL) {
 			goto L_ERROR;
 		}
 	}
 	if (PRVT->tables == NULL) {
-		PRVT->tables = reserve(PRVT, sizeof(struct TTINFLTTables));
+		PRVT->tables = _reserve(PRVT, sizeof(struct TTINFLTTables));
 		if (PRVT->tables == NULL) {
 			goto L_ERROR;
 		}
@@ -222,12 +223,12 @@ inflator_destroy(TInflator* state)
 	}
 
 	if (PRVT->window) {
-		release(PRVT, PRVT->window);
+		_release(PRVT, PRVT->window);
 	}
 	if (PRVT->tables) {
-		release(PRVT, PRVT->tables);
+		_release(PRVT, PRVT->tables);
 	}
-	release(PRVT, state);
+	_release(PRVT, state);
 }
 
 
@@ -640,9 +641,7 @@ updatewindow(struct TInflator* state)
 	uintxx total;
 	uintxx maxrun;
 	uint8* begin;
-#if 0
-	uint8* buffer;
-#endif
+
 	total = (uintxx) (state->target - state->tbgn);
 	if (total == 0) {
 		return 0;
@@ -664,11 +663,11 @@ updatewindow(struct TInflator* state)
 	maxrun = WNDWSIZE - PRVT->end;
 	if (total < maxrun)
 		maxrun = total;
-	memcpy(PRVT->window + PRVT->end, begin, maxrun);
+	ctb_memcpy(PRVT->window + PRVT->end, begin, maxrun);
 
 	total -= maxrun;
 	if (total) {
-		memcpy(PRVT->window, begin + maxrun, total);
+		ctb_memcpy(PRVT->window, begin + maxrun, total);
 		PRVT->end = total;
 	}
 	else {
@@ -785,7 +784,7 @@ L_ERROR:
 void
 inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 {
-	ASSERT(state && dict);
+	CTB_ASSERT(state && dict);
 
 	if (PRVT->used) {
 		SETERROR(INFLT_EINCORRECTUSE);
@@ -796,7 +795,7 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 	if (PRVT->window == NULL) {
 		uint8* buffer;
 
-		buffer = reserve(PRVT, WNDWSIZE);
+		buffer = _reserve(PRVT, WNDWSIZE);
 		if (buffer == NULL) {
 			SETERROR(INFLT_EOOM);
 			state->state = INFLT_BADSTATE;
@@ -807,7 +806,7 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 
 	if (size > WNDWSIZE)
 		size = WNDWSIZE;
-	memcpy(PRVT->window, dict, size);
+	ctb_memcpy(PRVT->window, dict, size);
 	PRVT->count = size;
 	PRVT->end   = size;
 
@@ -894,7 +893,7 @@ L_STATE3:
 	if (sourceleft < maxrun)
 		maxrun = sourceleft;
 
-	memcpy(state->target, state->source, maxrun);
+	ctb_memcpy(state->target, state->source, maxrun);
 	state->target += maxrun;
 	state->source += maxrun;
 
@@ -1555,14 +1554,39 @@ L_LOOP:
 		end = target + maxrun;
 
 		if (distance >= sizeof(BBTYPE)) {
-			memcpy(target, buffer, sizeof(BBTYPE));
+#if defined(CTB_FASTUNALIGNED)
+			((BBTYPE*) target)[0] = ((BBTYPE*) buffer)[0];
+#else
+			target[0] = buffer[0];
+			target[1] = buffer[1];
+			target[2] = buffer[2];
+			target[3] = buffer[3];
+#if sizeof(BBTYPE) == 8
+			target[4] = buffer[4];
+			target[5] = buffer[5];
+			target[6] = buffer[6];
+			target[7] = buffer[7];
+#endif
+#endif
 			target += sizeof(BBTYPE);
 			buffer += sizeof(BBTYPE);
-
 			do {
-				memcpy(target, buffer, sizeof(BBTYPE));
-				target += sizeof(BBTYPE);
-				buffer += sizeof(BBTYPE);
+#if defined(CTB_FASTUNALIGNED)
+				((BBTYPE*) target)[0] = ((BBTYPE*) buffer)[0];
+#else
+				target[0] = buffer[0];
+				target[1] = buffer[1];
+				target[2] = buffer[2];
+				target[3] = buffer[3];
+#if sizeof(BBTYPE) == 8
+				target[4] = buffer[4];
+				target[5] = buffer[5];
+				target[6] = buffer[6];
+				target[7] = buffer[7];
+#endif
+#endif
+			target += sizeof(BBTYPE);
+			buffer += sizeof(BBTYPE);
 			} while (target < end);
 			target = end;
 		}

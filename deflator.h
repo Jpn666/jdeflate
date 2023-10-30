@@ -133,7 +133,7 @@ void deflator_reset(TDeflator*, uintxx level);
 CTB_INLINE void
 deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (UNLIKELY(state->flush)) {
 		if (state->error) {
@@ -150,7 +150,7 @@ deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 CTB_INLINE void
 deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	state->tbgn = state->target = target;
 	state->tend = target + size;
@@ -159,7 +159,7 @@ deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 CTB_INLINE uintxx
 deflator_srcend(TDeflator* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	return (uintxx) (state->source - state->sbgn);
 }
@@ -167,7 +167,7 @@ deflator_srcend(TDeflator* state)
 CTB_INLINE uintxx
 deflator_tgtend(TDeflator* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	return (uintxx) (state->target - state->tbgn);
 }

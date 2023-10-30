@@ -130,7 +130,7 @@ void inflator_reset(TInflator*);
 CTB_INLINE void
 inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (UNLIKELY(state->finalinput)) {
 		if (state->error == 0) {
@@ -147,7 +147,7 @@ inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 CTB_INLINE void
 inflator_settgt(TInflator* state, uint8* target, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	state->tbgn = state->target = target;
 	state->tend = target + size;
@@ -156,7 +156,7 @@ inflator_settgt(TInflator* state, uint8* target, uintxx size)
 CTB_INLINE uintxx
 inflator_srcend(TInflator* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	return (uintxx) (state->source - state->sbgn);
 }
@@ -164,7 +164,7 @@ inflator_srcend(TInflator* state)
 CTB_INLINE uintxx
 inflator_tgtend(TInflator* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	return (uintxx) (state->target - state->tbgn);
 }

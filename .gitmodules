@@ -1,4 +1,0 @@
-[submodule "ctoolbox"]
-	path = ctoolbox
-	url = https://github.com/Jpn666/ctoolbox
-	branch = deflate

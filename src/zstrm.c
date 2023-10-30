@@ -17,28 +17,29 @@
 #include "../zstrm.h"
 #include <crypto/crc32.h>
 #include <crypto/adler32.h>
+#include <cmemory.h>
 
 
 #define ZIOBFFRSZ 8192
 
 
 CTB_INLINE void*
-reserve(struct TZStrm* p, uintxx amount)
+_reserve(struct TZStrm* p, uintxx amount)
 {
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return CTB_MALLOC(amount);
+	return ctb_reserve(amount);
 }
 
 CTB_INLINE void
-release(struct TZStrm* p, void* memory)
+_release(struct TZStrm* p, void* memory)
 {
 	if (p->allocator) {
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	CTB_FREE(memory);
+	ctb_release(memory);
 }
 
 
@@ -87,23 +88,23 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 		state = allocator->reserve(allocator->user, sizeof(struct TZStrm));
 	}
 	else {
-		state = CTB_MALLOC(sizeof(struct TZStrm));
+		state = ctb_reserve(sizeof(struct TZStrm));
 	}
 	if (state == NULL) {
 		return NULL;
 	}
 	state->allocator = allocator;
 
-	state->sbgn = reserve(state, ZIOBFFRSZ);
-	state->tbgn = reserve(state, ZIOBFFRSZ);
+	state->sbgn = _reserve(state, ZIOBFFRSZ);
+	state->tbgn = _reserve(state, ZIOBFFRSZ);
 	if (state->sbgn == NULL || state->tbgn == NULL) {
 		if (state->sbgn) {
-			release(state, state->sbgn);
+			_release(state, state->sbgn);
 		}
 		if (state->tbgn) {
-			release(state, state->tbgn);
+			_release(state, state->tbgn);
 		}
-		release(state, state);
+		_release(state, state);
 		return NULL;
 	}
 	state->infltr = NULL;
@@ -148,8 +149,8 @@ zstrm_destroy(TZStrm* state)
 		return;
 	}
 
-	release(state, state->sbgn);
-	release(state, state->tbgn);
+	_release(state, state->sbgn);
+	_release(state, state->tbgn);
 
 	if (state->infltr) {
 		inflator_destroy(state->infltr);
@@ -157,13 +158,13 @@ zstrm_destroy(TZStrm* state)
 	if (state->defltr) {
 		deflator_destroy(state->defltr);
 	}
-	release(state, state);
+	_release(state, state);
 }
 
 void
 zstrm_reset(TZStrm* state)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	state->state  = 0;
 	state->error  = 0;
@@ -210,7 +211,7 @@ zstrm_reset(TZStrm* state)
 void
 zstrm_setiofn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (state->state) {
 		SETSTATE(4);
@@ -232,7 +233,7 @@ void
 zstrm_setdctn(TZStrm* state, uint8* dict, uintxx size)
 {
 	uint32 adler;
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (state->state == 0 || state->state == 4) {
 		if (state->state == 4) {
@@ -291,7 +292,7 @@ zstrm_setdctn(TZStrm* state, uint8* dict, uintxx size)
 uintxx
 zstrm_getstate(TZStrm* state, uintxx* error)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (state->state == 1) {
 		if (state->smode == ZSTRM_RMODE) {
@@ -599,9 +600,40 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 				maxrun = size;
 
 			for (size -= maxrun; maxrun >= 16; maxrun -= 16) {
-				memcpy(buffer, target, 16);
-				target += 16;
+#if defined(CTB_FASTUNALIGNED)
+	#if defined(CTB_ENV64)
+				((uint64*) buffer)[0] = ((uint64*) target)[0];
+				((uint64*) buffer)[1] = ((uint64*) target)[1];
+	#else
+				((uint32*) buffer)[0] = ((uint32*) target)[0];
+				((uint32*) buffer)[1] = ((uint32*) target)[1];
+				((uint32*) buffer)[2] = ((uint32*) target)[2];
+				((uint32*) buffer)[3] = ((uint32*) target)[3];
+	#endif
 				buffer += 16;
+				target += 16;
+#else
+				buffer[0] = target[0];
+				buffer[1] = target[1];
+				buffer[2] = target[2];
+				buffer[3] = target[3];
+				buffer[4] = target[4];
+				buffer[5] = target[5];
+				buffer[6] = target[6];
+				buffer[7] = target[7];
+				buffer += 8;
+				target += 8;
+				buffer[0] = target[0];
+				buffer[1] = target[1];
+				buffer[2] = target[2];
+				buffer[3] = target[3];
+				buffer[4] = target[4];
+				buffer[5] = target[5];
+				buffer[6] = target[6];
+				buffer[7] = target[7];
+				buffer += 8;
+				target += 8;
+#endif
 			}
 			for (;maxrun; maxrun--)
 				*buffer++ = *target++;
@@ -683,7 +715,7 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 uintxx
 zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	/* check the stream mode */
 	if (UNLIKELY(state->infltr == NULL)) {
@@ -837,9 +869,40 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 				maxrun = size;
 
 			for (size -= maxrun; maxrun >= 16; maxrun -= 16) {
-				memcpy(source, buffer, 16);
+#if defined(CTB_FASTUNALIGNED)
+	#if defined(CTB_ENV64)
+				((uint64*) source)[0] = ((uint64*) buffer)[0];
+				((uint64*) source)[1] = ((uint64*) buffer)[1];
+	#else
+				((uint32*) source)[0] = ((uint32*) buffer)[0];
+				((uint32*) source)[1] = ((uint32*) buffer)[1];
+				((uint32*) source)[2] = ((uint32*) buffer)[2];
+				((uint32*) source)[3] = ((uint32*) buffer)[3];
+	#endif
 				source += 16;
 				buffer += 16;
+#else
+				source[0] = buffer[0];
+				source[1] = buffer[1];
+				source[2] = buffer[2];
+				source[3] = buffer[3];
+				source[4] = buffer[4];
+				source[5] = buffer[5];
+				source[6] = buffer[6];
+				source[7] = buffer[7];
+				source += 8;
+				buffer += 8;
+				source[0] = buffer[0];
+				source[1] = buffer[1];
+				source[2] = buffer[2];
+				source[3] = buffer[3];
+				source[4] = buffer[4];
+				source[5] = buffer[5];
+				source[6] = buffer[6];
+				source[7] = buffer[7];
+				source += 8;
+				buffer += 8;
+#endif
 			};
 			for (;maxrun; maxrun--)
 				*source++ = *buffer++;
@@ -878,7 +941,7 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 uintxx
 zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	/* check the stream mode */
 	if (UNLIKELY(state->defltr == NULL)) {
@@ -981,7 +1044,7 @@ emitzlibtail(struct TZStrm* state)
 void
 zstrm_flush(TZStrm* state, bool final)
 {
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (UNLIKELY(state->defltr == NULL || state->state ^ 3)) {
 		if (state->infltr) {

@@ -15,6 +15,7 @@
  */
 
 #include "../deflator.h"
+#include <cmemory.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -226,24 +227,23 @@ setparameters(struct TDeflator* state, uintxx level)
 }
 
 CTB_INLINE void*
-reserve(struct TDEFLTPrvt* p, uintxx amount)
+_reserve(struct TDEFLTPrvt* p, uintxx amount)
 {
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return CTB_MALLOC(amount);
+	return ctb_reserve(amount);
 }
 
 CTB_INLINE void
-release(struct TDEFLTPrvt* p, void* memory)
+_release(struct TDEFLTPrvt* p, void* memory)
 {
 	if (p->allocator) {
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	CTB_FREE(memory);
+	ctb_release(memory);
 }
-
 
 CTB_INLINE uintxx
 allocateprvt(TDeflator* state)
@@ -251,7 +251,7 @@ allocateprvt(TDeflator* state)
 	uintxx i;
 	struct TDEFLTExtra* extra;
 
-	extra = reserve(PRVT, sizeof(struct TDEFLTExtra));
+	extra = _reserve(PRVT, sizeof(struct TDEFLTExtra));
 	if (extra == NULL) {
 		return 0;
 	}
@@ -285,7 +285,7 @@ allocatemem(TDeflator* state, uintxx meminfo)
 	uintxx wsize;
 	uintxx bsize;
 	void* buffer;
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	/* we needs some extra bytes at the end of the window buffer to
 	 * perform fast comparisons */
@@ -297,12 +297,12 @@ allocatemem(TDeflator* state, uintxx meminfo)
 	buffer = PRVT->window;
 	if (PRVT->wnsize < wsize) {
 		if (PRVT->window) {
-			release(PRVT, PRVT->window);
+			_release(PRVT, PRVT->window);
 			PRVT->window = NULL;
 			PRVT->wnsize = 0;
 		}
 
-		buffer = reserve(PRVT, wsize);
+		buffer = _reserve(PRVT, wsize);
 		if (buffer == NULL) {
 			return 0;
 		}
@@ -314,12 +314,12 @@ allocatemem(TDeflator* state, uintxx meminfo)
 	buffer = PRVT->lzlist;
 	if (PRVT->lzsize < bsize) {
 		if (PRVT->lzlist) {
-			release(PRVT, PRVT->lzlist);
+			_release(PRVT, PRVT->lzlist);
 			PRVT->lzlist = NULL;
 			PRVT->lzsize = 0;
 		}
 
-		buffer = reserve(PRVT, bsize * sizeof(PRVT->lzlist[0]));
+		buffer = _reserve(PRVT, bsize * sizeof(PRVT->lzlist[0]));
 		if (buffer == NULL) {
 			return 0;
 		}
@@ -362,7 +362,7 @@ deflator_create(uintxx level, TAllocator* allocator)
 		state = allocator->reserve(allocator->user, sizeof(struct TDEFLTPrvt));
 	}
 	else {
-		state = CTB_MALLOC(sizeof(struct TDEFLTPrvt));
+		state = ctb_reserve(sizeof(struct TDEFLTPrvt));
 	}
 	if (state == NULL) {
 		return NULL;
@@ -417,7 +417,7 @@ void
 deflator_reset(TDeflator* state, uintxx level)
 {
 	uintxx meminfo;
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	meminfo = getmeminfo(level);
 	if (meminfo == 0) {
@@ -482,16 +482,16 @@ deflator_destroy(TDeflator* state)
 	}
 
 	if (PRVT->window) {
-		release(PRVT, PRVT->window);
+		_release(PRVT, PRVT->window);
 	}
 	if (PRVT->lzlist) {
-		release(PRVT, PRVT->lzlist);
+		_release(PRVT, PRVT->lzlist);
 	}
 
 	if (PRVT->extra) {
-		release(PRVT, PRVT->extra);
+		_release(PRVT, PRVT->extra);
 	}
-	release(PRVT, state);
+	_release(PRVT, state);
 }
 
 
@@ -609,7 +609,7 @@ eDEFLTResult
 deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 {
 	uintxx r;
-	ASSERT(state);
+	CTB_ASSERT(state);
 
 	if (flush && (state->flush == 0 || state->flush == DEFLT_FLUSH)) {
 		state->flush = flush;
@@ -725,7 +725,7 @@ L_LOOP:
 	if (maxrun > sourceleft)
 		maxrun = sourceleft;
 
-	memcpy(PRVT->wend, state->source, maxrun);
+	ctb_memcpy(PRVT->wend, state->source, maxrun);
 	PRVT->wend    += maxrun;
 	state->source += maxrun;
 
@@ -810,7 +810,7 @@ L_STATE3:
 		maxrun = targetleft;
 
 	buffer = PRVT->wend - PRVT->aux1;
-	memcpy(state->target, buffer, maxrun);
+	ctb_memcpy(state->target, buffer, maxrun);
 	state->target += maxrun;
 
 	PRVT->aux1 -= maxrun;
@@ -1713,7 +1713,7 @@ void
 deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 {
 	uintxx i;
-	ASSERT(state && dict);
+	CTB_ASSERT(state && dict);
 
 	if (PRVT->used) {
 		SETERROR(DEFLT_EINCORRECTUSE);
@@ -1737,7 +1737,7 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 			insert(state, (uint16) i, GETHHASH(GETSHEAD4(dict, i)));
 		}
 	}
-	memcpy(PRVT->window, dict, size);
+	ctb_memcpy(PRVT->window, dict, size);
 	PRVT->wend  += size;
 	PRVT->cursor = size;
 
@@ -1766,7 +1766,7 @@ fillwindow(struct TDeflator* state)
 
 			/* move the window lower part of the buffer */
 			bgn = PRVT->window + (PRVT->cursor - WNDWSIZE);
-			memcpy(PRVT->window, bgn, PRVT->wend - bgn);
+			ctb_memcpy(PRVT->window, bgn, PRVT->wend - bgn);
 
 			PRVT->cursor = WNDWSIZE;
 			PRVT->wend   = PRVT->window + (PRVT->wend - bgn);
@@ -1779,7 +1779,7 @@ fillwindow(struct TDeflator* state)
 		total = windowleft;
 	}
 	if (total) {
-		memcpy(PRVT->wend, state->source, total);
+		ctb_memcpy(PRVT->wend, state->source, total);
 		state->source += total;
 		PRVT->wend    += total;
 	}
