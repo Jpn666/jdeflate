@@ -1,4 +1,4 @@
-project('deflate', 'c', default_options: ['c_std=c99', 'buildtype=release', 'warning_level=3'], version: run_command('python', 'tools/version.py', check: true).stdout().strip())
+project('deflate', 'c', default_options: ['c_std=c99', 'buildtype=release', 'warning_level=3'], version: run_command('python', join_paths(meson.current_source_dir(), 'tools/version.py'), check: true).stdout().strip())
 
 
 deps = []
