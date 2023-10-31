@@ -601,15 +601,15 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 
 			for (size -= maxrun; maxrun >= 16; maxrun -= 16) {
 #if defined(CTB_FASTUNALIGNED)
-	#if defined(CTB_ENV64)
+#if defined(CTB_ENV64)
 				((uint64*) buffer)[0] = ((uint64*) target)[0];
 				((uint64*) buffer)[1] = ((uint64*) target)[1];
-	#else
+#else
 				((uint32*) buffer)[0] = ((uint32*) target)[0];
 				((uint32*) buffer)[1] = ((uint32*) target)[1];
 				((uint32*) buffer)[2] = ((uint32*) target)[2];
 				((uint32*) buffer)[3] = ((uint32*) target)[3];
-	#endif
+#endif
 				buffer += 16;
 				target += 16;
 #else

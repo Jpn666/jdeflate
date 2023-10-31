@@ -18,9 +18,20 @@ if mmp.length() == 3
 endif
 
 
-projectsources = [
-  'src/inflator.c', 'src/deflator.c', 'src/zstrm.c'
-]
+projectsources = []
+
+python = find_program('python3')
+script = join_paths(meson.current_source_dir(), 'tools/listfiles.py')
+newline = '''
+'''
+
+base = 'src'
+r = run_command(python, script, base, '.c', check: true).stdout()
+foreach file: r.split(newline)
+  if not (file == '')
+    projectsources += [file]
+  endif
+endforeach
 
 
 static_build = static_library('deflate', sources: projectsources, pic: true, install: true,  dependencies: deps)
