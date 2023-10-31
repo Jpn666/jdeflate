@@ -1554,39 +1554,33 @@ L_LOOP:
 		end = target + maxrun;
 
 		if (distance >= sizeof(BBTYPE)) {
-#if defined(CTB_FASTUNALIGNED)
-			((BBTYPE*) target)[0] = ((BBTYPE*) buffer)[0];
-#else
 			target[0] = buffer[0];
 			target[1] = buffer[1];
 			target[2] = buffer[2];
 			target[3] = buffer[3];
-#if sizeof(BBTYPE) == 8
+#if defined(CTB_ENV64)
 			target[4] = buffer[4];
 			target[5] = buffer[5];
 			target[6] = buffer[6];
 			target[7] = buffer[7];
 #endif
-#endif
+
 			target += sizeof(BBTYPE);
 			buffer += sizeof(BBTYPE);
 			do {
-#if defined(CTB_FASTUNALIGNED)
-				((BBTYPE*) target)[0] = ((BBTYPE*) buffer)[0];
-#else
 				target[0] = buffer[0];
 				target[1] = buffer[1];
 				target[2] = buffer[2];
 				target[3] = buffer[3];
-#if sizeof(BBTYPE) == 8
+#if defined(CTB_ENV64)
 				target[4] = buffer[4];
 				target[5] = buffer[5];
 				target[6] = buffer[6];
 				target[7] = buffer[7];
 #endif
-#endif
-			target += sizeof(BBTYPE);
-			buffer += sizeof(BBTYPE);
+
+				target += sizeof(BBTYPE);
+				buffer += sizeof(BBTYPE);
 			} while (target < end);
 			target = end;
 		}
