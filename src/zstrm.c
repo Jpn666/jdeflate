@@ -17,7 +17,7 @@
 #include "../zstrm.h"
 #include <crypto/crc32.h>
 #include <crypto/adler32.h>
-#include <cmemory.h>
+#include <ctbmemory.h>
 
 
 #define ZIOBFFRSZ 8192
@@ -29,7 +29,7 @@ _reserve(struct TZStrm* p, uintxx amount)
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return ctb_reserve(amount);
+	return CTB_RESERVE(amount);
 }
 
 CTB_INLINE void
@@ -39,7 +39,7 @@ _release(struct TZStrm* p, void* memory)
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	ctb_release(memory);
+	CTB_RELEASE(memory);
 }
 
 
@@ -870,15 +870,15 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 
 			for (size -= maxrun; maxrun >= 16; maxrun -= 16) {
 #if defined(CTB_FASTUNALIGNED)
-	#if defined(CTB_ENV64)
+#if defined(CTB_ENV64)
 				((uint64*) source)[0] = ((uint64*) buffer)[0];
 				((uint64*) source)[1] = ((uint64*) buffer)[1];
-	#else
+#else
 				((uint32*) source)[0] = ((uint32*) buffer)[0];
 				((uint32*) source)[1] = ((uint32*) buffer)[1];
 				((uint32*) source)[2] = ((uint32*) buffer)[2];
 				((uint32*) source)[3] = ((uint32*) buffer)[3];
-	#endif
+#endif
 				source += 16;
 				buffer += 16;
 #else

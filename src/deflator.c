@@ -15,7 +15,7 @@
  */
 
 #include "../deflator.h"
-#include <cmemory.h>
+#include <ctbmemory.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -232,7 +232,7 @@ _reserve(struct TDEFLTPrvt* p, uintxx amount)
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return ctb_reserve(amount);
+	return CTB_RESERVE(amount);
 }
 
 CTB_INLINE void
@@ -242,7 +242,7 @@ _release(struct TDEFLTPrvt* p, void* memory)
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	ctb_release(memory);
+	CTB_RELEASE(memory);
 }
 
 CTB_INLINE uintxx
@@ -362,7 +362,7 @@ deflator_create(uintxx level, TAllocator* allocator)
 		state = allocator->reserve(allocator->user, sizeof(struct TDEFLTPrvt));
 	}
 	else {
-		state = ctb_reserve(sizeof(struct TDEFLTPrvt));
+		state = CTB_RESERVE(sizeof(struct TDEFLTPrvt));
 	}
 	if (state == NULL) {
 		return NULL;

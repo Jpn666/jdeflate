@@ -15,7 +15,7 @@
  */
 
 #include "../inflator.h"
-#include <cmemory.h>
+#include <ctbmemory.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -121,7 +121,7 @@ inflator_create(TAllocator* allocator)
 		state = allocator->reserve(allocator->user, sizeof(struct TINFLTPrvt));
 	}
 	else {
-		state = ctb_reserve(sizeof(struct TINFLTPrvt));
+		state = CTB_RESERVE(sizeof(struct TINFLTPrvt));
 	}
 	if (state == NULL) {
 		return NULL;
@@ -144,7 +144,7 @@ _reserve(struct TINFLTPrvt* p, uintxx amount)
 	if (p->allocator) {
 		return p->allocator->reserve(p->allocator->user, amount);
 	}
-	return ctb_reserve(amount);
+	return CTB_RESERVE(amount);
 }
 
 CTB_INLINE void
@@ -154,7 +154,7 @@ _release(struct TINFLTPrvt* p, void* memory)
 		p->allocator->release(p->allocator->user, memory);
 		return;
 	}
-	ctb_release(memory);
+	CTB_RELEASE(memory);
 }
 
 
@@ -1554,6 +1554,12 @@ L_LOOP:
 		end = target + maxrun;
 
 		if (distance >= sizeof(BBTYPE)) {
+#if defined(CTB_FASTUNALIGNED)
+			((uint32*) target)[0] = ((uint32*) buffer)[0];
+#if defined(CTB_ENV64)
+			((uint32*) target)[1] = ((uint32*) buffer)[1];
+#endif
+#else
 			target[0] = buffer[0];
 			target[1] = buffer[1];
 			target[2] = buffer[2];
@@ -1564,10 +1570,16 @@ L_LOOP:
 			target[6] = buffer[6];
 			target[7] = buffer[7];
 #endif
-
+#endif
 			target += sizeof(BBTYPE);
 			buffer += sizeof(BBTYPE);
 			do {
+#if defined(CTB_FASTUNALIGNED)
+				((uint32*) target)[0] = ((uint32*) buffer)[0];
+#if defined(CTB_ENV64)
+				((uint32*) target)[1] = ((uint32*) buffer)[1];
+#endif
+#else
 				target[0] = buffer[0];
 				target[1] = buffer[1];
 				target[2] = buffer[2];
@@ -1578,7 +1590,7 @@ L_LOOP:
 				target[6] = buffer[6];
 				target[7] = buffer[7];
 #endif
-
+#endif
 				target += sizeof(BBTYPE);
 				buffer += sizeof(BBTYPE);
 			} while (target < end);
