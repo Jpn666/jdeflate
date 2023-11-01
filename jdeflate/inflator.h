@@ -39,7 +39,8 @@
  * ...check for errors
  */
 
-#include <ctoolbox.h>
+#include <ctoolbox/ctoolbox.h>
+#include <jdeflateconfig.h>
 
 
 /* Return codes for inflate call */

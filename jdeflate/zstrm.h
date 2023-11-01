@@ -21,7 +21,7 @@
  * zstrm.h
  * Stream oriented deflate and gzip encoder/decoder. */
 
-#include <ctoolbox.h>
+#include <ctoolbox/ctoolbox.h>
 #include "deflator.h"
 #include "inflator.h"
 

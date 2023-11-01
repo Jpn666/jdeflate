@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#include "../deflator.h"
-#include <ctbmemory.h>
+#include <jdeflate/deflator.h>
+#include <ctoolbox/memory.h>
 
 
 #if defined(AUTOINCLUDE_1)

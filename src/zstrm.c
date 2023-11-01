@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#include "../zstrm.h"
-#include <crypto/crc32.h>
-#include <crypto/adler32.h>
-#include <ctbmemory.h>
+#include <jdeflate/zstrm.h>
+#include <ctoolbox/crypto/crc32.h>
+#include <ctoolbox/crypto/adler32.h>
+#include <ctoolbox/memory.h>
 
 
 #define ZIOBFFRSZ 8192

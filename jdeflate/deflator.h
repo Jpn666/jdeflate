@@ -39,7 +39,8 @@
  *
  */
 
-#include <ctoolbox.h>
+#include <ctoolbox/ctoolbox.h>
+#include <jdeflateconfig.h>
 
 
 /* Return codes for deflate call */
