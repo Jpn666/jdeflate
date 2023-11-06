@@ -62,7 +62,7 @@ foreach file: r.split(newline)
   endif
 endforeach
 
-configfile = configure_file(input: 'jdeflateconfig.template', output: 'jdeflateconfig.h', configuration: conf)
+configfile = configure_file(input: 'jdeflateconfig.h.in', output: 'jdeflateconfig.h', configuration: conf)
 headerfiles += [configfile]
 
 
