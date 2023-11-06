@@ -1745,38 +1745,75 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 }
 
 static uintxx
+slidewindow(struct TDeflator* state)
+{
+	uintxx r;
+	uint8* b;
+	uint8* w;
+	uint8* end;
+
+	b = PRVT->window + (PRVT->cursor - WNDWSIZE);
+	w = PRVT->window;
+#if defined(CTB_ENV64)
+	r = ((uintxx) b) & (8 - 1);
+#else
+	r = ((uintxx) b) & (4 - 1);
+#endif
+	b = b - r;
+
+	/* move the window lower part of the buffer */
+	end = PRVT->wend;
+#if defined(CTB_ENV64)
+	while (end - b >= 32) {
+		((uint64*) w)[0] = ((uint64*) b)[0];
+		((uint64*) w)[1] = ((uint64*) b)[1];
+		((uint64*) w)[2] = ((uint64*) b)[2];
+		((uint64*) w)[3] = ((uint64*) b)[3];
+		b += 32;
+		w += 32;
+	}
+#else
+	while (end - b >= 16) {
+		((uint32*) w)[0] = ((uint32*) b)[0];
+		((uint32*) w)[1] = ((uint32*) b)[1];
+		((uint32*) w)[2] = ((uint32*) b)[2];
+		((uint32*) w)[3] = ((uint32*) b)[3];
+		b += 16;
+		w += 16;
+	}
+#endif
+	while (end > b) {
+		*w++ = *b++;
+	}
+
+	PRVT->wend   = w;
+	PRVT->cursor = WNDWSIZE + r;
+	return (uintxx) (b - w);
+}
+
+static uintxx
 fillwindow(struct TDeflator* state)
 {
 	uintxx total;
-	uintxx windowleft;
-	uintxx sourceleft;
+	uintxx wleft;
 
-	windowleft = (uintxx) (PRVT->windowend - PRVT->wend);
-	sourceleft = (uintxx) (state->send     - state->source);
+	wleft = (uintxx) (PRVT->windowend - PRVT->wend);
+	total = (uintxx) (state->send - state->source);
 
-	total = sourceleft;
-	if (LIKELY(sourceleft > windowleft)) {
-		if (LIKELY(windowleft < 0x400)) {
-			uint8* bgn;
+	if (LIKELY(total > wleft) && (LIKELY(wleft < 0x400))) {
+		uintxx slide;
 
-			/* we use this to get the offset in the window
-			 * cursor - base := relative position
-			 * offset        := relative position - hash index */
-			PRVT->base -= (uint16) (PRVT->cursor - WNDWSIZE);
+		/* we use this to get the offset in the window
+		 * cursor - base := relative position
+		 * offset        := relative position - hash index */
+		slide = slidewindow(state);
+		PRVT->base -= slide & 0xffff;
 
-			/* move the window lower part of the buffer */
-			bgn = PRVT->window + (PRVT->cursor - WNDWSIZE);
-			ctb_memcpy(PRVT->window, bgn, PRVT->wend - bgn);
-
-			PRVT->cursor = WNDWSIZE;
-			PRVT->wend   = PRVT->window + (PRVT->wend - bgn);
-
-			windowleft = (uintxx) (PRVT->windowend - PRVT->wend);
-		}
+		wleft = (uintxx) (PRVT->windowend - PRVT->wend);
 	}
 
-	if (total > windowleft) {
-		total = windowleft;
+	if (total > wleft) {
+		total = wleft;
 	}
 	if (total) {
 		ctb_memcpy(PRVT->wend, state->source, total);
