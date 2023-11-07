@@ -4,6 +4,11 @@ project('jdeflate', 'c', default_options: ['c_std=c99', 'buildtype=release', 'wa
 deps = []
 deps += [dependency('', fallback: ['ctoolbox', 'lib'])]
 
+cc = meson.get_compiler('c')
+if cc.get_id() == 'msvc'
+  add_project_arguments('-D__MSVC__', language: 'c')
+endif
+
 
 # major, minor and path
 versionarray = [0, 0, 0]
