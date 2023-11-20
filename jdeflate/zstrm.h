@@ -161,6 +161,6 @@ uintxx zstrm_w(TZStrm*, uint8* buffer, uintxx size);
 
 /*
  * */
-uintxx zstrm_getstate(TZStrm* state, uintxx* error);
+uintxx zstrm_getstate(TZStrm*, uintxx* error);
 
 #endif
