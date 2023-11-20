@@ -687,14 +687,14 @@ inflator_inflate(TInflator* state, uintxx final)
 {
 	uintxx r;
 
-	if (UNLIKELY(state->finalinput == 0 && final)) {
+	if (CTB_UNLIKELY(state->finalinput == 0 && final)) {
 		state->finalinput = 1;
 	}
 
 	PRVT->used = 1;
-	if (LIKELY(state->state == 5)) {
+	if (CTB_LIKELY(state->state == 5)) {
 L_DECODE:
-		if (LIKELY((r = decodeblck(state)) != 0)) {
+		if (CTB_LIKELY((r = decodeblck(state)) != 0)) {
 			if (state->finalinput && r == INFLT_SRCEXHSTD) {
 				SETERROR(INFLT_EINPUTEND);
 				return INFLT_ERROR;
@@ -707,7 +707,7 @@ L_DECODE:
 	for (;;) {
 		switch (state->state) {
 			case 0: {
-				if (UNLIKELY(PRVT->final)) {
+				if (CTB_UNLIKELY(PRVT->final)) {
 					state->state = INFLT_BADSTATE;
 					return INFLT_OK;
 				}
@@ -732,7 +732,7 @@ L_DECODE:
 
 			/* stored */
 			case 1: {
-				if (LIKELY((r = decodestrd(state)) != 0)) {
+				if (CTB_LIKELY((r = decodestrd(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
 						return INFLT_ERROR;
@@ -754,7 +754,7 @@ L_DECODE:
 
 			/* dynamic */
 			case 3: {
-				if (LIKELY((r = decodednmc(state)) != 0)) {
+				if (CTB_LIKELY((r = decodednmc(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
 						return INFLT_ERROR;
@@ -1128,7 +1128,7 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			uintxx offset;
 
 			maxrun = distance - maxrun;
-			if (UNLIKELY(maxrun > PRVT->count)) {
+			if (CTB_UNLIKELY(maxrun > PRVT->count)) {
 				SETERROR(INFLT_EFAROFFSET);
 				return INFLT_ERROR;
 			}
@@ -1208,7 +1208,7 @@ decodeblck(struct TInflator* state)
 	}
 
 L_LOOP:
-	if (UNLIKELY(fastcheck)) {
+	if (CTB_UNLIKELY(fastcheck)) {
 		uintxx targetleft;
 		uintxx sourceleft;
 
@@ -1231,11 +1231,11 @@ L_LOOP:
 
 	for (;;) {
 		e = PRVT->ltable[getbits(state, LROOTBITS)];
-		if (LIKELY(e.length <= PRVT->bcount)) {
+		if (CTB_LIKELY(e.length <= PRVT->bcount)) {
 			break;
 		}
 
-		if (UNLIKELY(fetchbyte(state) == 0)) {
+		if (CTB_UNLIKELY(fetchbyte(state) == 0)) {
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
@@ -1245,7 +1245,7 @@ L_LOOP:
 		}
 	}
 
-	if (LIKELY(e.etag == SUBTABLEENTRY)) {
+	if (CTB_LIKELY(e.etag == SUBTABLEENTRY)) {
 		uintxx base;
 		uintxx bits;
 
@@ -1253,11 +1253,11 @@ L_LOOP:
 		bits = e.length;
 		for (;;) {
 			e = PRVT->ltable[base + (getbits(state, bits) >> LROOTBITS)];
-			if (LIKELY(e.length <= PRVT->bcount)) {
+			if (CTB_LIKELY(e.length <= PRVT->bcount)) {
 				break;
 			}
 
-			if (UNLIKELY(fetchbyte(state) == 0)) {
+			if (CTB_UNLIKELY(fetchbyte(state) == 0)) {
 				if (updatewindow(state)) {
 					return INFLT_ERROR;
 				}
@@ -1268,8 +1268,8 @@ L_LOOP:
 		}
 	}
 
-	if (LIKELY(e.etag == LITERALSYMBOL)) {
-		if (LIKELY(state->tend > state->target)) {
+	if (CTB_LIKELY(e.etag == LITERALSYMBOL)) {
+		if (CTB_LIKELY(state->tend > state->target)) {
 			*state->target++ = (uint8) e.info;
 		}
 		else {
@@ -1284,13 +1284,13 @@ L_LOOP:
 		goto L_LOOP;
 	}
 
-	if (UNLIKELY(e.etag == ENDOFBLOCK)) {
+	if (CTB_UNLIKELY(e.etag == ENDOFBLOCK)) {
 		dropbits(state, e.length);
 		PRVT->substate = 0;
 		return 0;
 	}
 
-	if (UNLIKELY(e.etag == INVALIDCODE)) {
+	if (CTB_UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
@@ -1300,7 +1300,7 @@ L_LOOP:
 	bextra = e.etag;
 
 L_STATE1:
-	if (LIKELY(tryreadbits(state, bextra))) {
+	if (CTB_LIKELY(tryreadbits(state, bextra))) {
 		length += getbits(state, bextra);
 		dropbits(state, bextra);
 	}
@@ -1321,11 +1321,11 @@ L_STATE2:
 	/* decode distance */
 	for (;;) {
 		e = PRVT->dtable[getbits(state, DROOTBITS)];
-		if (LIKELY(e.length <= PRVT->bcount)) {
+		if (CTB_LIKELY(e.length <= PRVT->bcount)) {
 			break;
 		}
 
-		if (UNLIKELY(fetchbyte(state) == 0)) {
+		if (CTB_UNLIKELY(fetchbyte(state) == 0)) {
 			if (updatewindow(state)) {
 				return INFLT_ERROR;
 			}
@@ -1339,7 +1339,7 @@ L_STATE2:
 		}
 	}
 
-	if (LIKELY(e.etag == SUBTABLEENTRY)) {
+	if (CTB_LIKELY(e.etag == SUBTABLEENTRY)) {
 		uintxx base;
 		uintxx bits;
 
@@ -1347,11 +1347,11 @@ L_STATE2:
 		bits = e.length;
 		for (;;) {
 			e = PRVT->dtable[base + (getbits(state, bits) >> DROOTBITS)];
-			if (LIKELY(e.length <= PRVT->bcount)) {
+			if (CTB_LIKELY(e.length <= PRVT->bcount)) {
 				break;
 			}
 
-			if(UNLIKELY(fetchbyte(state) == 0)) {
+			if(CTB_UNLIKELY(fetchbyte(state) == 0)) {
 				if (updatewindow(state)) {
 					SETERROR(INFLT_EOOM);
 					return INFLT_ERROR;
@@ -1367,7 +1367,7 @@ L_STATE2:
 		}
 	}
 
-	if (UNLIKELY(e.etag == INVALIDCODE)) {
+	if (CTB_UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
@@ -1377,7 +1377,7 @@ L_STATE2:
 	bextra   = e.etag;
 
 L_STATE3:
-	if (LIKELY(tryreadbits(state, bextra))) {
+	if (CTB_LIKELY(tryreadbits(state, bextra))) {
 		distance += getbits(state, bextra);
 		dropbits(state, bextra);
 	}
@@ -1396,7 +1396,7 @@ L_STATE3:
 
 L_STATE4:
 	r = copybytes(state, distance, length);
-	if (UNLIKELY(r)) {
+	if (CTB_UNLIKELY(r)) {
 		return r;
 	}
 	goto L_LOOP;
@@ -1469,10 +1469,10 @@ decodefast(struct TInflator* state)
 	r = 0;
 
 L_LOOP:
-	if (UNLIKELY(tend - target < FASTTGTLEFT || send - source < FASTSRCLEFT))
+	if (tend - target < FASTTGTLEFT || send - source < FASTSRCLEFT)
 		goto L_DONE;
 
-	if (LIKELY(bc < 15)) {
+	if (CTB_LIKELY(bc < 15)) {
 		FILLBBUFFER();
 
 		bb |= n << bc;
@@ -1482,28 +1482,28 @@ L_LOOP:
 
 	/* decode literal or length */
 	e = PRVT->ltable[GETBITS(bb, LROOTBITS)];
-	if (LIKELY(e.etag == SUBTABLEENTRY)) {
+	if (CTB_LIKELY(e.etag == SUBTABLEENTRY)) {
 		e = PRVT->ltable[e.info + (GETBITS(bb, e.length) >> LROOTBITS)];
 	}
 	DROPBITS(bb, bc, e.length);
 
-	if (LIKELY(e.etag == LITERALSYMBOL)) {
+	if (CTB_LIKELY(e.etag == LITERALSYMBOL)) {
 		*target++ = (uint8) e.info;
 		goto L_LOOP;
 	}
 
-	if (UNLIKELY(e.etag == ENDOFBLOCK)) {
+	if (CTB_UNLIKELY(e.etag == ENDOFBLOCK)) {
 		r = ENDOFBLOCK;
 		goto L_DONE;
 	}
 
-	if (UNLIKELY(e.etag == INVALIDCODE)) {
+	if (CTB_UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
 
 	/* length */
-	if (UNLIKELY(e.etag > bc)) {
+	if (CTB_UNLIKELY(e.etag > bc)) {
 		FILLBBUFFER();
 
 		bb |= n << bc;
@@ -1514,7 +1514,7 @@ L_LOOP:
 	length = e.info + GETBITS(bb, e.etag);
 	DROPBITS(bb, bc, e.etag);
 
-	if (UNLIKELY(bc < 15)) {
+	if (CTB_UNLIKELY(bc < 15)) {
 		FILLBBUFFER();
 
 		bb |= n << bc;
@@ -1524,17 +1524,17 @@ L_LOOP:
 
 	/* decode distance */
 	e = PRVT->dtable[GETBITS(bb, DROOTBITS)];
-	if (LIKELY(e.etag == SUBTABLEENTRY)) {
+	if (CTB_LIKELY(e.etag == SUBTABLEENTRY)) {
 		e = PRVT->dtable[e.info + (GETBITS(bb, e.length) >> DROOTBITS)];
 	}
 	DROPBITS(bb, bc, e.length);
 
-	if (UNLIKELY(e.etag == INVALIDCODE)) {
+	if (CTB_UNLIKELY(e.etag == INVALIDCODE)) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
 
-	if (UNLIKELY(e.etag > bc)) {
+	if (CTB_UNLIKELY(e.etag > bc)) {
 		FILLBBUFFER();
 
 		bb |= n << bc;
@@ -1546,7 +1546,7 @@ L_LOOP:
 	DROPBITS(bb, bc, e.etag);
 
 	targetsz = (uintxx) (target - state->tbgn);
-	if (LIKELY(distance < targetsz)) {
+	if (CTB_LIKELY(distance < targetsz)) {
 		uint8* end;
 
 		buffer = target - distance;
@@ -1612,7 +1612,7 @@ L_LOOP:
 
 				maxrun = distance - maxrun;
 
-				if (UNLIKELY(maxrun > PRVT->count)) {
+				if (CTB_UNLIKELY(maxrun > PRVT->count)) {
 					SETERROR(INFLT_EFAROFFSET);
 					return INFLT_ERROR;
 				}

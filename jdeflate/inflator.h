@@ -133,7 +133,7 @@ inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 {
 	CTB_ASSERT(state);
 
-	if (UNLIKELY(state->finalinput)) {
+	if (CTB_UNLIKELY(state->finalinput)) {
 		if (state->error == 0) {
 			state->error = INFLT_EINCORRECTUSE;
 			state->state = INFLT_EBADSTATE;

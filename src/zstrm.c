@@ -320,13 +320,13 @@ fetchbyte(struct TZStrm* state)
 {
 	intxx r;
 
-	if (LIKELY(state->source < state->send)) {
+	if (CTB_LIKELY(state->source < state->send)) {
 		return *state->source++;
 	}
 
 	if (state->error == 0) {
 		r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
-		if (LIKELY(r)) {
+		if (CTB_LIKELY(r)) {
 			if ((uintxx) r > ZIOBFFRSZ) {
 				SETERROR(ZSTRM_EIOERROR);
 				return 0;
@@ -593,9 +593,9 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 	tend   = state->tend;
 	bbegin = buffer;
 
-	while (LIKELY(size)) {
+	while (CTB_LIKELY(size)) {
 		maxrun = (uintxx) (tend - target);
-		if (LIKELY(maxrun)) {
+		if (CTB_LIKELY(maxrun)) {
 			if (maxrun > size)
 				maxrun = size;
 
@@ -641,12 +641,12 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 			continue;
 		}
 
-		if (LIKELY(state->result == INFLT_SRCEXHSTD)) {
+		if (CTB_LIKELY(state->result == INFLT_SRCEXHSTD)) {
 			intxx r;
 
 			r = state->iofn(state->sbgn, ZIOBFFRSZ, state->payload);
-			if (LIKELY(r)) {
-				if (UNLIKELY((uintxx) r > ZIOBFFRSZ)) {
+			if (CTB_LIKELY(r)) {
+				if (CTB_UNLIKELY((uintxx) r > ZIOBFFRSZ)) {
 					SETERROR(ZSTRM_EIOERROR);
 					SETSTATE(4);
 					return 0;
@@ -663,7 +663,7 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 			}
 		}
 		else {
-			if (UNLIKELY(state->result == INFLT_OK)) {
+			if (CTB_UNLIKELY(state->result == INFLT_OK)) {
 				/* end of the stream */
 				state->source += inflator_srcend(state->infltr);
 
@@ -688,7 +688,7 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 
 		inflator_settgt(state->infltr, state->tbgn, ZIOBFFRSZ);
 		state->result = inflator_inflate(state->infltr, 0);
-		if (UNLIKELY(state->result == INFLT_ERROR)) {
+		if (CTB_UNLIKELY(state->result == INFLT_ERROR)) {
 			SETERROR(ZSTRM_EDEFLATE);
 			SETSTATE(4);
 			return 0;
@@ -699,9 +699,9 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 		tend   = state->tbgn + n;
 
 		/* update the checksums */
-		if (LIKELY(state->docrc32))
+		if (CTB_LIKELY(state->docrc32))
 			state->crc32 =   crc32_update(state->crc32, target, n);
-		if (LIKELY(state->doadler)) {
+		if (CTB_LIKELY(state->doadler)) {
 			state->adler = adler32_update(state->adler, target, n);
 		}
 		state->total += n;
@@ -718,19 +718,19 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 	CTB_ASSERT(state);
 
 	/* check the stream mode */
-	if (UNLIKELY(state->infltr == NULL)) {
+	if (CTB_UNLIKELY(state->infltr == NULL)) {
 		SETSTATE(4);
 		if (state->error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
-	if (LIKELY(state->state == 3)) {
+	if (CTB_LIKELY(state->state == 3)) {
 		return inflate(state, buffer, size);
 	}
 
 	if (state->state == 1) {
-		if (UNLIKELY(state->iofn == NULL)) {
+		if (CTB_UNLIKELY(state->iofn == NULL)) {
 			SETSTATE(4);
 			SETERROR(ZSTRM_EIOERROR);
 			return 0;
@@ -766,11 +766,11 @@ emittarget(struct TZStrm* state, uintxx count)
 {
 	intxx r;
 
-	if (UNLIKELY(count == 0)) {
+	if (CTB_UNLIKELY(count == 0)) {
 		return;
 	}
 	r = state->iofn(state->tbgn, count, state->payload);
-	if (LIKELY(r)) {
+	if (CTB_LIKELY(r)) {
 		if ((uintxx) r > count) {
 			SETERROR(ZSTRM_EIOERROR);
 			return;
@@ -782,13 +782,13 @@ emittarget(struct TZStrm* state, uintxx count)
 static void
 emitbyte(struct TZStrm* state, uint8 value)
 {
-	if (LIKELY(state->error == 0)) {
-		if (LIKELY(state->target < state->tend)) {
+	if (CTB_LIKELY(state->error == 0)) {
+		if (CTB_LIKELY(state->target < state->tend)) {
 			*state->target++ = value;
 		}
 		else {
 			emittarget(state, (uintxx) (state->target - state->tbgn));
-			if (UNLIKELY(state->error)) {
+			if (CTB_UNLIKELY(state->error)) {
 				return;
 			}
 			*state->target++ = value;
@@ -862,9 +862,9 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 	send   = state->send;
 	sbgn   = state->sbgn;
 	bbegin = buffer;
-	while (LIKELY(size)) {
+	while (CTB_LIKELY(size)) {
 		maxrun = (uintxx) (send - source);
-		if (LIKELY(maxrun)) {
+		if (CTB_LIKELY(maxrun)) {
 			if (maxrun > size)
 				maxrun = size;
 
@@ -913,9 +913,9 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 		deflator_setsrc(state->defltr, sbgn, ZIOBFFRSZ);
 
 		/* update the checksums */
-		if (LIKELY(state->docrc32))
+		if (CTB_LIKELY(state->docrc32))
 			state->crc32 =   crc32_update(state->crc32, sbgn, ZIOBFFRSZ);
-		if (LIKELY(state->doadler)) {
+		if (CTB_LIKELY(state->doadler)) {
 			state->adler = adler32_update(state->adler, sbgn, ZIOBFFRSZ);
 		}
 		state->total += ZIOBFFRSZ;
@@ -925,7 +925,7 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 			r = deflator_deflate(state->defltr, 0);
 
 			emittarget(state, deflator_tgtend(state->defltr));
-			if (UNLIKELY(state->error)) {
+			if (CTB_UNLIKELY(state->error)) {
 				SETSTATE(4);
 				return 0;
 			}
@@ -944,7 +944,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 	CTB_ASSERT(state);
 
 	/* check the stream mode */
-	if (UNLIKELY(state->defltr == NULL)) {
+	if (CTB_UNLIKELY(state->defltr == NULL)) {
 		SETSTATE(4);
 		if (state->error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
@@ -952,11 +952,11 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 		return 0;
 	}
 
-	if (LIKELY(state->state == 3)) {
+	if (CTB_LIKELY(state->state == 3)) {
 		return deflate(state, buffer, size);
 	}
-	if (LIKELY(state->state == 1 || state->state == 2)) {
-		if (UNLIKELY(state->iofn == NULL)) {
+	if (CTB_LIKELY(state->state == 1 || state->state == 2)) {
+		if (CTB_UNLIKELY(state->iofn == NULL)) {
 			SETERROR(ZSTRM_EIOERROR);
 			SETSTATE(4);
 			return 0;
@@ -988,9 +988,9 @@ flush(TZStrm* state, uintxx flush)
 		deflator_setsrc(state->defltr, state->sbgn, total);
 
 		/* update the checksums */
-		if (LIKELY(state->docrc32))
+		if (CTB_LIKELY(state->docrc32))
 			state->crc32 =   crc32_update(state->crc32, state->sbgn, total);
-		if (LIKELY(state->doadler)) {
+		if (CTB_LIKELY(state->doadler)) {
 			state->adler = adler32_update(state->adler, state->sbgn, total);
 		}
 		state->total += total;
@@ -1001,7 +1001,7 @@ flush(TZStrm* state, uintxx flush)
 		r = deflator_deflate(state->defltr, flush);
 
 		emittarget(state, deflator_tgtend(state->defltr));
-		if (UNLIKELY(state->error)) {
+		if (CTB_UNLIKELY(state->error)) {
 			SETSTATE(4);
 			return;
 		}
@@ -1046,7 +1046,7 @@ zstrm_flush(TZStrm* state, bool final)
 {
 	CTB_ASSERT(state);
 
-	if (UNLIKELY(state->defltr == NULL || state->state ^ 3)) {
+	if (CTB_UNLIKELY(state->defltr == NULL || state->state ^ 3)) {
 		if (state->infltr) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 			SETSTATE(4);
@@ -1065,12 +1065,8 @@ zstrm_flush(TZStrm* state, bool final)
 			case ZSTRM_ZLIB: emitzlibtail(state); break;
 		}
 		SETSTATE(4);
+		return;
 	}
-	else {
-		flush(state, DEFLT_FLUSH);
-		if (state->error) {
-			return;
-		}
-	}
+	flush(state, DEFLT_FLUSH);
 }
 

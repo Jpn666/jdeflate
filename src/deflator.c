@@ -1280,15 +1280,19 @@ buildtables(struct TDEFLTExtra* extra)
 #define W6(T, B) W1(T, B); W5(T, B);
 
 #if defined(CTB_ENV64)
-	#define ENSURE2ON32(T, B, C)
-	#define ENSURE2ON64(T, B, C) if(LIKELY((C) > 48)) { W6(T, B); (C) -= 48; }
-	#define ENSURE3ON64(T, B, C) if(LIKELY((C) > 40)) { W5(T, B); (C) -= 40; }
-	#define ENSURE4ON64(T, B, C) if(LIKELY((C) > 32)) { W4(T, B); (C) -= 32; }
+
+#define ENSURE2ON32(T, B, C)
+#define ENSURE2ON64(T, B, C) if (CTB_LIKELY((C) > 48)) { W6(T, B); (C) -= 48; }
+#define ENSURE3ON64(T, B, C) if (CTB_LIKELY((C) > 40)) { W5(T, B); (C) -= 40; }
+#define ENSURE4ON64(T, B, C) if (CTB_LIKELY((C) > 32)) { W4(T, B); (C) -= 32; }
+
 #else
-	#define ENSURE2ON64(T, B, C)
-	#define ENSURE3ON64(T, B, C)
-	#define ENSURE4ON64(T, B, C)
-	#define ENSURE2ON32(T, B, C) if(LIKELY((C) > 16)) { W2(T, B); (C) -= 16; }
+
+#define ENSURE2ON64(T, B, C)
+#define ENSURE3ON64(T, B, C)
+#define ENSURE4ON64(T, B, C)
+#define ENSURE2ON32(T, B, C) if (CTB_LIKELY((C) > 16)) { W2(T, B); (C) -= 16; }
+
 #endif
 
 #define EMIT(BB, BC, BITS, N) BB |= (BBTYPE) (BITS) << (BC); BC += (N);
@@ -1322,7 +1326,7 @@ emitlzfast(struct TDeflator* state)
 
 	r = 1;
 	while ((uintxx) (state->tend - target) >= (8 + (sizeof(BBTYPE) << 1))) {
-		if (LIKELY(lzlist[0] < 0x8000)) {
+		if (CTB_LIKELY(lzlist[0] < 0x8000)) {
 			code1 = littable[lzlist[0]];
 
 			/* 15 */
@@ -1330,7 +1334,7 @@ emitlzfast(struct TDeflator* state)
 			ENSURE2ON32(target, bb, bc);
 			EMIT(bb, bc, code1.code, code1.bitlen);
 
-			if (UNLIKELY(lzlist[0] == BLOCKENDSYMBOL)) {
+			if (CTB_UNLIKELY(lzlist[0] == BLOCKENDSYMBOL)) {
 				r = 0;
 				goto L_DONE;
 			}
@@ -1346,7 +1350,7 @@ emitlzfast(struct TDeflator* state)
 		ENSURE2ON32(target, bb, bc);
 		EMIT(bb, bc, lcode.code, lcode.bitlen);
 
-		if (LIKELY(lcode.bextra)) {
+		if (CTB_LIKELY(lcode.bextra)) {
 			extra = (lzlist[0] - (uintxx) (0x8000)) - lcode.base;
 
 			ENSURE2ON32(target, bb, bc);
@@ -1410,7 +1414,7 @@ emitlz(struct TDeflator* state)
 	}
 
 L_LOOP:
-	if (UNLIKELY(fastcheck)) {
+	if (CTB_UNLIKELY(fastcheck)) {
 		uintxx remaining = (uintxx) (state->tend - state->target);
 		if (remaining >= ((sizeof(BBTYPE) << 1) << 2)) {
 			r = emitlzfast(state);
@@ -1433,7 +1437,7 @@ L_LOOP:
 			return 1;
 		}
 
-		if (UNLIKELY(PRVT->zptr[0] == BLOCKENDSYMBOL)) {
+		if (CTB_UNLIKELY(PRVT->zptr[0] == BLOCKENDSYMBOL)) {
 			goto L_DONE;
 		}
 		PRVT->zptr++;
@@ -1800,7 +1804,7 @@ fillwindow(struct TDeflator* state)
 	wleft = (uintxx) (PRVT->windowend - PRVT->wend);
 	total = (uintxx) (state->send - state->source);
 
-	if (LIKELY(total > wleft) && (LIKELY(wleft < 0x400))) {
+	if (CTB_LIKELY(total > wleft) && (CTB_LIKELY(wleft < 0x400))) {
 		uintxx slide;
 
 		/* we use this to get the offset in the window
@@ -1995,11 +1999,11 @@ findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
 		/* we use modular arithmetic here, so there is no need to shift
 		 * the cache table entries each time we slide the window */
 		noffset = (uint16) (rpos - next);
-		if (UNLIKELY(noffset > WNDWSIZE || noffset == 0)) {
+		if (CTB_UNLIKELY(noffset > WNDWSIZE || noffset == 0)) {
 			break;
 		}
 		pmatch = strbgn - noffset;
-		if (LIKELY(strbgn[length] == pmatch[length])) {
+		if (CTB_LIKELY(strbgn[length] == pmatch[length])) {
 
 			nlength = getmatchlength(strbgn, pmatch, strend);
 			if (nlength > length) {
@@ -2197,7 +2201,7 @@ L_LOOP:
 		}
 	}
 
-	while (LIKELY(limit > PRVT->cursor)) {
+	while (CTB_LIKELY(limit > PRVT->cursor)) {
 		uintxx lsymbol;
 		uintxx dsymbol;
 		uint16 hash;
@@ -2209,14 +2213,14 @@ L_LOOP:
 		match = findmatch(state, hash, MINMATCH - 1);
 
 		insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
-		if (LIKELY(match.length >= MINMATCH)) {
+		if (CTB_LIKELY(match.length >= MINMATCH)) {
 			lsymbol = getlsymbol(match.length);
 			dsymbol = getdsymbol(match.offset);
 
 			lnsfrqs[lsymbol]++;
 			dstfrqs[dsymbol]++;
 			appendz(state, match, lsymbol, dsymbol);
-			if (LIKELY(match.length <= PRVT->mininsert)) {
+			if (CTB_LIKELY(match.length <= PRVT->mininsert)) {
 				PRVT->cursor++;
 				for (skip = 1; match.length > skip; skip++) {
 					head = GETSHEAD3(PRVT->window, PRVT->cursor);
@@ -2238,7 +2242,7 @@ L_LOOP:
 			PRVT->cursor++;
 		}
 
-		if (UNLIKELY(PRVT->zend + 4 > PRVT->lzlistend)) {
+		if (CTB_UNLIKELY(PRVT->zend + 4 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
 			PRVT->hasinput = 1;
@@ -2247,11 +2251,11 @@ L_LOOP:
 	}
 
 	r = fillwindow(state);
-	if (LIKELY(r)) {
+	if (CTB_LIKELY(r)) {
 		goto L_LOOP;
 	}
 
-	if (UNLIKELY(state->flush)) {
+	if (CTB_UNLIKELY(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */
@@ -2313,7 +2317,7 @@ L_LOOP:
 		}
 	}
 
-	while (LIKELY(limit > PRVT->cursor)) {
+	while (CTB_LIKELY(limit > PRVT->cursor)) {
 		uint16 hash;
 		uint32 head;
 
@@ -2325,8 +2329,8 @@ L_LOOP:
 
 			insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
 			PRVT->cursor++;
-			if (LIKELY(hasmatch)) {
-				if (LIKELY(minlength >= match.length)) {
+			if (CTB_LIKELY(hasmatch)) {
+				if (CTB_LIKELY(minlength >= match.length)) {
 					match = prevm;
 					skip++;
 				}
@@ -2337,10 +2341,10 @@ L_LOOP:
 				}
 			}
 			else {
-				if (LIKELY(match.length > MINMATCH)) {
+				if (CTB_LIKELY(match.length > MINMATCH)) {
 					hasmatch = 1;
 					skip = 1;
-					if (LIKELY(match.length < PRVT->nicematch)) {
+					if (CTB_LIKELY(match.length < PRVT->nicematch)) {
 						/* try at the next position */
 						prevm     = match;
 						minlength = prevm.length;
@@ -2352,7 +2356,7 @@ L_LOOP:
 			break;
 		}
 
-		if (LIKELY(hasmatch)) {
+		if (CTB_LIKELY(hasmatch)) {
 			uintxx lsymbol;
 			uintxx dsymbol;
 
@@ -2380,7 +2384,7 @@ L_LOOP:
 			APPENDL(PRVT->zend, c);
 		}
 
-		if (UNLIKELY(PRVT->zend + 5 > PRVT->lzlistend)) {
+		if (CTB_UNLIKELY(PRVT->zend + 5 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
 			PRVT->hasinput = 1;
@@ -2390,11 +2394,11 @@ L_LOOP:
 	}
 
 	r = fillwindow(state);
-	if (LIKELY(r)) {
+	if (CTB_LIKELY(r)) {
 		goto L_LOOP;
 	}
 
-	if (UNLIKELY(state->flush)) {
+	if (CTB_UNLIKELY(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */
