@@ -713,7 +713,7 @@ inflate(struct TZStrm* state, uint8* buffer, uintxx size)
 }
 
 uintxx
-zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
+zstrm_r(TZStrm* state, void* buffer, uintxx size)
 {
 	CTB_ASSERT(state);
 
@@ -726,7 +726,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 		return 0;
 	}
 	if (CTB_LIKELY(state->state == 3)) {
-		return inflate(state, buffer, size);
+		return inflate(state, (uint8*) buffer, size);
 	}
 
 	if (state->state == 1) {
@@ -750,7 +750,7 @@ zstrm_r(TZStrm* state, uint8* buffer, uintxx size)
 			return 0;
 		}
 		SETSTATE(3);
-		return inflate(state, buffer, size);
+		return inflate(state, (uint8*) buffer, size);
 	}
 
 	if (state->state == 2) {
@@ -849,11 +849,11 @@ emitzlibhead(struct TZStrm* state)
 
 
 static uintxx
-deflate(TZStrm* state, uint8* buffer, uintxx size)
+deflate(TZStrm* state, const uint8* buffer, uintxx size)
 {
 	uintxx maxrun;
 	uintxx r;
-	uint8* bbegin;
+	const uint8* bbegin;
 	uint8* source;
 	uint8* send;
 	uint8* sbgn;
@@ -939,7 +939,7 @@ deflate(TZStrm* state, uint8* buffer, uintxx size)
 }
 
 uintxx
-zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
+zstrm_w(TZStrm* state, const void* buffer, uintxx size)
 {
 	CTB_ASSERT(state);
 
@@ -953,7 +953,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 	}
 
 	if (CTB_LIKELY(state->state == 3)) {
-		return deflate(state, buffer, size);
+		return deflate(state, (const uint8*) buffer, size);
 	}
 	if (CTB_LIKELY(state->state == 1 || state->state == 2)) {
 		if (CTB_UNLIKELY(state->iofn == NULL)) {
@@ -972,7 +972,7 @@ zstrm_w(TZStrm* state, uint8* buffer, uintxx size)
 		}
 		SETSTATE(3);
 
-		return deflate(state, buffer, size);
+		return deflate(state, (const uint8*) buffer, size);
 	}
 	return 0;
 }

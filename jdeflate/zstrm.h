@@ -153,11 +153,8 @@ void zstrm_flush(TZStrm*, bool final);
 
 /*
  * */
-uintxx zstrm_r(TZStrm*, uint8* buffer, uintxx size);
-
-/*
- * */
-uintxx zstrm_w(TZStrm*, uint8* buffer, uintxx size);
+uintxx zstrm_r(TZStrm*,       void* buffer, uintxx size);
+uintxx zstrm_w(TZStrm*, const void* buffer, uintxx size);
 
 /*
  * */

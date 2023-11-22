@@ -274,9 +274,9 @@ allocateprvt(TDeflator* state)
 
 
 #if defined(CTB_ENV64)
-	#define WNDNGUARDSZ (MAXMATCH + (sizeof(uint64) * (4 + 1)))
+	#define WNDNGUARDSZ (264 + (sizeof(uint64) * (4 + 1)))
 #else
-	#define WNDNGUARDSZ (MAXMATCH + (sizeof(uint32) * (4 + 1)))
+	#define WNDNGUARDSZ (260 + (sizeof(uint32) * (4 + 1)))
 #endif
 
 static uintxx
@@ -417,6 +417,8 @@ void
 deflator_reset(TDeflator* state, uintxx level)
 {
 	uintxx meminfo;
+	uint8* buffer;
+	uint8* end;
 	CTB_ASSERT(state);
 
 	meminfo = getmeminfo(level);
@@ -467,6 +469,14 @@ deflator_reset(TDeflator* state, uintxx level)
 		resetcache(state);
 	}
 
+	/* we don't need this */
+	buffer = PRVT->window;
+	for (end = buffer + PRVT->wnsize; buffer < end;) {
+		*buffer++ = 0;
+		*buffer++ = 0;
+		*buffer++ = 0;
+		*buffer++ = 0;
+	}
 	PRVT->wend = PRVT->window;
 	return;
 
