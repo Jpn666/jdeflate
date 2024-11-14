@@ -1,1 +1,3 @@
 .vscode
+builddir/
+subprojects/ctoolbox/
