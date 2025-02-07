@@ -40,6 +40,7 @@
  */
 
 #include <ctoolbox/ctoolbox.h>
+#include <ctoolbox/memory.h>
 #include <jdeflateconfig.h>
 
 
@@ -93,7 +94,7 @@ typedef struct TDeflator TDeflator;
 
 /*
  * */
-TDeflator* deflator_create(uintxx level, TAllocator* allocator);
+TDeflator* deflator_create(uintxx level, TAllocator* allctr);
 
 /*
  * */
@@ -125,7 +126,7 @@ void deflator_setdctnr(TDeflator*, uint8* dict, uintxx size);
 
 /*
  * */
-void deflator_reset(TDeflator*, uintxx level);
+void deflator_reset(TDeflator*);
 
 
 /*

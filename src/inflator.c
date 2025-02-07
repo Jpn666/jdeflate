@@ -15,10 +15,9 @@
  */
 
 #include <jdeflate/inflator.h>
-#include <ctoolbox/memory.h>
 
 
-#if defined(AUTOINCLUDE_1)
+#if !defined(AUTOINCLUDE_1)
 
 /* deflate format definitions */
 #define DEFLT_MAXBITS    15
@@ -26,8 +25,6 @@
 
 #define WNDWSIZE DEFLT_WINDOWSZ
 
-
-#else
 
 /* root bits for main tables */
 #define LROOTBITS 9
@@ -62,19 +59,6 @@ struct TINFLTPrvt {
 	uintxx aux3;
 	uintxx aux4;
 
-	/* bit buffer */
-#if defined(CTB_ENV64)
-	uint64 bbuffer;
-#else
-	uint32 bbuffer;
-#endif
-	uintxx bcount;
-
-	/* window buffer */
-	uint8* window;
-	uintxx count;          /* bytes avaible in the window buffer + target */
-	uintxx end;            /* window buffer end */
-
 	/* decoding tables */
 	struct TINFLTTEntry* ltable;
 	struct TINFLTTEntry* dtable;
@@ -102,7 +86,20 @@ struct TINFLTPrvt {
 	*tables;
 
 	/* custom allocator */
-	struct TAllocator* allocator;
+	struct TAllocator* allctr;
+
+	/* bit buffer */
+#if defined(CTB_ENV64)
+	uint64 bbuffer;
+#else
+	uint32 bbuffer;
+#endif
+	uintxx bcount;
+
+	/* window buffer */
+	uintxx count;          /* bytes avaible in the window buffer + target */
+	uintxx end;            /* window buffer end */
+	uint8  window[WNDWSIZE];
 };
 
 #endif
@@ -112,23 +109,39 @@ struct TINFLTPrvt {
 
 #define PRVT ((struct TINFLTPrvt*) state)
 
+
+CTB_INLINE void*
+request_(struct TINFLTPrvt* state, uintxx size)
+{
+	struct TAllocator* a;
+
+	a = state->allctr;
+	return a->request(size, a->user);
+}
+
+CTB_INLINE void
+dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
+{
+	struct TAllocator* a;
+
+	a = state->allctr;
+	a->dispose(memory, size, a->user);
+}
+
 TInflator*
-inflator_create(TAllocator* allocator)
+inflator_create(TAllocator* allctr)
 {
 	struct TInflator* state;
 
-	if (allocator) {
-		state = allocator->reserve(allocator->user, sizeof(struct TINFLTPrvt));
+	if (allctr == NULL) {
+		allctr = (void*) ctb_defaultallocator(NULL);
 	}
-	else {
-		state = CTB_RESERVE(sizeof(struct TINFLTPrvt));
-	}
+	state = allctr->request(sizeof(struct TINFLTPrvt), allctr->user);
 	if (state == NULL) {
 		return NULL;
 	}
-	PRVT->allocator = allocator;
+	PRVT->allctr = allctr;
 
-	PRVT->window = NULL;
 	PRVT->tables = NULL;
 	inflator_reset(state);
 	if (state->error) {
@@ -136,25 +149,6 @@ inflator_create(TAllocator* allocator)
 		return NULL;
 	}
 	return state;
-}
-
-CTB_INLINE void*
-_reserve(struct TINFLTPrvt* p, uintxx amount)
-{
-	if (p->allocator) {
-		return p->allocator->reserve(p->allocator->user, amount);
-	}
-	return CTB_RESERVE(amount);
-}
-
-CTB_INLINE void
-_release(struct TINFLTPrvt* p, void* memory)
-{
-	if (p->allocator) {
-		p->allocator->release(p->allocator->user, memory);
-		return;
-	}
-	CTB_RELEASE(memory);
 }
 
 
@@ -196,14 +190,8 @@ inflator_reset(TInflator* state)
 	PRVT->end   = 0;
 
 	/* */
-	if (PRVT->window == NULL) {
-		PRVT->window = _reserve(PRVT, WNDWSIZE);
-		if (PRVT->window == NULL) {
-			goto L_ERROR;
-		}
-	}
 	if (PRVT->tables == NULL) {
-		PRVT->tables = _reserve(PRVT, sizeof(struct TTINFLTTables));
+		PRVT->tables = request_(PRVT, sizeof(struct TTINFLTTables));
 		if (PRVT->tables == NULL) {
 			goto L_ERROR;
 		}
@@ -222,13 +210,10 @@ inflator_destroy(TInflator* state)
 		return;
 	}
 
-	if (PRVT->window) {
-		_release(PRVT, PRVT->window);
-	}
 	if (PRVT->tables) {
-		_release(PRVT, PRVT->tables);
+		dispose_(PRVT, PRVT->tables, sizeof(struct TTINFLTTables));
 	}
-	_release(PRVT, state);
+	dispose_(PRVT, state, sizeof(struct TINFLTPrvt));
 }
 
 
@@ -792,20 +777,11 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 		return;
 	}
 
-	if (PRVT->window == NULL) {
-		uint8* buffer;
-
-		buffer = _reserve(PRVT, WNDWSIZE);
-		if (buffer == NULL) {
-			SETERROR(INFLT_EOOM);
-			state->state = INFLT_BADSTATE;
-			return;
-		}
-		PRVT->window = buffer;
+	if (size > WNDWSIZE) {
+		dict = (dict + size) - WNDWSIZE;
+		size = WNDWSIZE;
 	}
 
-	if (size > WNDWSIZE)
-		size = WNDWSIZE;
 	ctb_memcpy(PRVT->window, dict, size);
 	PRVT->count = size;
 	PRVT->end   = size;

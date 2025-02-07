@@ -121,7 +121,7 @@ struct TZStrm {
 	uint8* tend;
 
 	/* custom allocator */
-	struct TAllocator* allocator;
+	struct TAllocator* allctr;
 };
 
 typedef struct TZStrm TZStrm;
@@ -129,7 +129,7 @@ typedef struct TZStrm TZStrm;
 
 /*
  * Creates a new stream. */
-TZStrm* zstrm_create(uintxx flags, uintxx level, TAllocator* allocator);
+TZStrm* zstrm_create(uintxx flags, uintxx level, TAllocator* allctr);
 
 /*
  * */

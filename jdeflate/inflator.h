@@ -40,6 +40,7 @@
  */
 
 #include <ctoolbox/ctoolbox.h>
+#include <ctoolbox/memory.h>
 #include <jdeflateconfig.h>
 
 
@@ -90,7 +91,7 @@ typedef struct TInflator TInflator;
 
 /*
  * */
-TInflator* inflator_create(TAllocator* allocator);
+TInflator* inflator_create(TAllocator* allctr);
 
 /*
  * */

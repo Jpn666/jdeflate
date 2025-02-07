@@ -17,29 +17,27 @@
 #include <jdeflate/zstrm.h>
 #include <ctoolbox/crypto/crc32.h>
 #include <ctoolbox/crypto/adler32.h>
-#include <ctoolbox/memory.h>
 
 
 #define ZIOBFFRSZ 8192
 
 
 CTB_INLINE void*
-_reserve(struct TZStrm* p, uintxx amount)
+request_(struct TZStrm* state, uintxx size)
 {
-	if (p->allocator) {
-		return p->allocator->reserve(p->allocator->user, amount);
-	}
-	return CTB_RESERVE(amount);
+	struct TAllocator* a;
+
+	a = state->allctr;
+	return a->request(size, a->user);
 }
 
 CTB_INLINE void
-_release(struct TZStrm* p, void* memory)
+dispose_(struct TZStrm* state, void* memory, uintxx size)
 {
-	if (p->allocator) {
-		p->allocator->release(p->allocator->user, memory);
-		return;
-	}
-	CTB_RELEASE(memory);
+	struct TAllocator* a;
+
+	a = state->allctr;
+	a->dispose(memory, size, a->user);
 }
 
 
@@ -47,7 +45,7 @@ _release(struct TZStrm* p, void* memory)
 #define ZSTRM_TYPEMASK 0x1c
 
 TZStrm*
-zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
+zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 {
 	uintxx mode;
 	uintxx type;
@@ -84,41 +82,39 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allocator)
 		}
 	}
 
-	if (allocator) {
-		state = allocator->reserve(allocator->user, sizeof(struct TZStrm));
+	if (allctr == NULL) {
+		allctr = (void*) ctb_defaultallocator(NULL);
 	}
-	else {
-		state = ctb_reserve(sizeof(struct TZStrm));
-	}
+	state = allctr->request(sizeof(struct TZStrm), allctr->user);
 	if (state == NULL) {
 		return NULL;
 	}
-	state->allocator = allocator;
+	state->allctr = allctr;
 
-	state->sbgn = _reserve(state, ZIOBFFRSZ);
-	state->tbgn = _reserve(state, ZIOBFFRSZ);
+	state->sbgn = request_(state, ZIOBFFRSZ);
+	state->tbgn = request_(state, ZIOBFFRSZ);
 	if (state->sbgn == NULL || state->tbgn == NULL) {
 		if (state->sbgn) {
-			_release(state, state->sbgn);
+			dispose_(state, state->sbgn, ZIOBFFRSZ);
 		}
 		if (state->tbgn) {
-			_release(state, state->tbgn);
+			dispose_(state, state->tbgn, ZIOBFFRSZ);
 		}
-		_release(state, state);
+		dispose_(state, state, sizeof(struct TZStrm));
 		return NULL;
 	}
 	state->infltr = NULL;
 	state->defltr = NULL;
 
 	if (mode == ZSTRM_RMODE) {
-		state->infltr = inflator_create(allocator);
+		state->infltr = inflator_create(allctr);
 		if (state->infltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
 		}
 	}
 	else {
-		state->defltr = deflator_create((state->level = level), allocator);
+		state->defltr = deflator_create((state->level = level), allctr);
 		if (state->defltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
@@ -149,8 +145,8 @@ zstrm_destroy(TZStrm* state)
 		return;
 	}
 
-	_release(state, state->sbgn);
-	_release(state, state->tbgn);
+	dispose_(state, state->sbgn, ZIOBFFRSZ);
+	dispose_(state, state->tbgn, ZIOBFFRSZ);
 
 	if (state->infltr) {
 		inflator_destroy(state->infltr);
@@ -158,7 +154,7 @@ zstrm_destroy(TZStrm* state)
 	if (state->defltr) {
 		deflator_destroy(state->defltr);
 	}
-	_release(state, state);
+	dispose_(state, state, sizeof(struct TZStrm));
 }
 
 void
@@ -200,7 +196,7 @@ zstrm_reset(TZStrm* state)
 	if (state->defltr) {
 		state->send += ZIOBFFRSZ;
 		state->tend += ZIOBFFRSZ;
-		deflator_reset(state->defltr, state->level);
+		deflator_reset(state->defltr);
 	}
 }
 
@@ -283,7 +279,7 @@ zstrm_setdctn(TZStrm* state, uint8* dict, uintxx size)
 	}
 	return;
 
-	L_ERROR:
+L_ERROR:
 	if (state->error == 0)
 		SETERROR(ZSTRM_EINCORRECTUSE);
 	SETSTATE(4);

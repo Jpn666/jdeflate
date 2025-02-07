@@ -15,7 +15,6 @@
  */
 
 #include <jdeflate/deflator.h>
-#include <ctoolbox/memory.h>
 
 
 #if defined(AUTOINCLUDE_1)
@@ -36,14 +35,14 @@
 #define WNDWSIZE 32768
 
 /* cache size */
-#define SMASK ((WNDWSIZE << 1) - 1)
-#define HMASK ((WNDWSIZE << 1) - 1)
+#define SMASK ((1ul << 16) - 1)
+#define HMASK ((1ul << 16) - 1)
+#define QMASK ((1ul << 15) - 1)
 
 /* number of literals (including end of block), match symbols and precodes */
 #define MAXLTCODES 257
 #define MAXLZCODES 32
 #define MAXPCCODES 19
-
 
 /* private stuff */
 struct TDEFLTPrvt {
@@ -109,7 +108,7 @@ struct TDEFLTPrvt {
 	/* token index */
 	uint16* zptr;
 
-	/* used for any level greater than 0 */
+	/* used for any level other than 0 and 1 */
 	struct TDEFLTExtra {
 		/* chache table */
 		uint16 chain[SMASK + 1];
@@ -156,7 +155,7 @@ struct TDEFLTPrvt {
 	*extra;
 
 	/* custom allocator */
-	struct TAllocator* allocator;
+	struct TAllocator* allctr;
 };
 
 #endif
@@ -172,14 +171,13 @@ getmeminfo(uintxx level)
 {
 	switch (level) {
 		case 0:
-			return BUILDMEMINFO(WNDWBITS + 1, 0x00);
 		case 1:
-			return BUILDMEMINFO(WNDWBITS + 1, 0x0e);
+			return BUILDMEMINFO(WNDWBITS + 1, 0x00);
 		case 2:
 		case 3:
 		case 4:
-			return BUILDMEMINFO(WNDWBITS + 1, 0x0f);
 		case 5:
+			return BUILDMEMINFO(WNDWBITS + 1, 0x0f);
 		case 6:
 		case 7:
 			return BUILDMEMINFO(WNDWBITS + 2, 0x0f);
@@ -207,18 +205,17 @@ setparameters(struct TDeflator* state, uintxx level)
 	uintxx chain;
 
 	switch (level) {
-		case 0: nice =   0; good =  0; lazy =   0; chain =    0; break;
-		case 1: nice =   3; good =  3; lazy =   3; chain =    1; break;
 		case 2: nice =   3; good =  3; lazy =   6; chain =    4; break;
 		case 3: nice =   8; good =  6; lazy =   8; chain =    8; break;
-		case 4: nice =  16; good =  8; lazy =  16; chain =   16; break;
+		case 4: nice =  16; good =  8; lazy =  24; chain =   24; break;
 		case 5: nice =  16; good =  8; lazy =  16; chain =   16; break;
 		case 6: nice =  32; good =  8; lazy =  32; chain =   32; break;
 		case 7: nice =  64; good = 16; lazy =  64; chain =  128; break;
 		case 8: nice = 128; good = 32; lazy = 128; chain = 1024; break;
 		case 9: nice = 258; good = 64; lazy = 258; chain = 4096; break;
 		default:
-			return;
+			nice = 0; good = 0; lazy = 0; chain = 0;
+			break;
 	}
 	PRVT->goodmatch = good;
 	PRVT->nicematch = nice;
@@ -226,32 +223,33 @@ setparameters(struct TDeflator* state, uintxx level)
 	PRVT->maxchain  = chain;
 }
 
+
 CTB_INLINE void*
-_reserve(struct TDEFLTPrvt* p, uintxx amount)
+request_(struct TDEFLTPrvt* prvt, uintxx amount)
 {
-	if (p->allocator) {
-		return p->allocator->reserve(p->allocator->user, amount);
-	}
-	return CTB_RESERVE(amount);
+	struct TAllocator* a;
+
+	a = prvt->allctr;
+	return a->request(amount, a->user);
 }
 
 CTB_INLINE void
-_release(struct TDEFLTPrvt* p, void* memory)
+dispose_(struct TDEFLTPrvt* prvt, void* memory, uintxx amount)
 {
-	if (p->allocator) {
-		p->allocator->release(p->allocator->user, memory);
-		return;
-	}
-	CTB_RELEASE(memory);
+	struct TAllocator* a;
+
+	a = prvt->allctr;
+	a->dispose(memory, amount, a->user);
 }
 
+
 CTB_INLINE uintxx
-allocateprvt(TDeflator* state)
+allocateextra(TDeflator* state)
 {
 	uintxx i;
 	struct TDEFLTExtra* extra;
 
-	extra = _reserve(PRVT, sizeof(struct TDEFLTExtra));
+	extra = request_(PRVT, sizeof(struct TDEFLTExtra));
 	if (extra == NULL) {
 		return 0;
 	}
@@ -264,14 +262,12 @@ allocateprvt(TDeflator* state)
 
 	PRVT->hlist = extra->hlist;
 	PRVT->chain = extra->chain;
-
 	PRVT->extra = extra;
 	return 1;
 }
 
 #define MINMATCH   3
 #define MAXMATCH 258
-
 
 #if defined(CTB_ENV64)
 	#define WNDNGUARDSZ (264 + (sizeof(uint64) * (4 + 1)))
@@ -282,64 +278,46 @@ allocateprvt(TDeflator* state)
 static uintxx
 allocatemem(TDeflator* state, uintxx meminfo)
 {
-	uintxx wsize;
-	uintxx bsize;
+	uintxx wnsize;
+	uintxx lzsize;
 	void* buffer;
-	CTB_ASSERT(state);
 
-	/* we needs some extra bytes at the end of the window buffer to
-	 * perform fast comparisons */
-	wsize = GETWNBFFSZ(meminfo) + WNDNGUARDSZ;
-	bsize = GETLZBFFSZ(meminfo);
-	if (bsize == 1)
-		bsize--;
+	PRVT->hlist = NULL;
+	PRVT->chain = NULL;
+	PRVT->extra = NULL;
 
-	buffer = PRVT->window;
-	if (PRVT->wnsize < wsize) {
-		if (PRVT->window) {
-			_release(PRVT, PRVT->window);
-			PRVT->window = NULL;
-			PRVT->wnsize = 0;
-		}
+	wnsize = GETWNBFFSZ(meminfo) + WNDNGUARDSZ;
+	lzsize = GETLZBFFSZ(meminfo);
+	if (lzsize == 1)
+		lzsize--;
 
-		buffer = _reserve(PRVT, wsize);
+	buffer = request_(PRVT, wnsize * sizeof(PRVT->window[0]));
+	if (buffer == NULL) {
+		return 0;
+	}
+	PRVT->window = buffer;
+	PRVT->wnsize = wnsize;
+
+	buffer = request_(PRVT, lzsize * sizeof(PRVT->lzlist[0]));
+	if (buffer == NULL) {
+		return 0;
+	}
+	PRVT->lzlist = buffer;
+	PRVT->lzsize = lzsize;
+
+	if (PRVT->level == 0) {
+		return 1;
+	}
+	if (PRVT->level == 1) {
+		buffer = request_(PRVT, (QMASK + 1) * sizeof(PRVT->hlist[0]));
 		if (buffer == NULL) {
 			return 0;
 		}
-		PRVT->wnsize = wsize;
+		PRVT->hlist = buffer;
+		return 1;
 	}
-	PRVT->windowend  = PRVT->window = buffer;
-	PRVT->windowend += wsize;
-
-	buffer = PRVT->lzlist;
-	if (PRVT->lzsize < bsize) {
-		if (PRVT->lzlist) {
-			_release(PRVT, PRVT->lzlist);
-			PRVT->lzlist = NULL;
-			PRVT->lzsize = 0;
-		}
-
-		buffer = _reserve(PRVT, bsize * sizeof(PRVT->lzlist[0]));
-		if (buffer == NULL) {
-			return 0;
-		}
-		PRVT->lzsize = bsize;
-	}
-	PRVT->lzlistend  = PRVT->lzlist = buffer;
-	PRVT->lzlistend += bsize;
-
-	if (PRVT->level) {
-		if (PRVT->extra == NULL) {
-			if (allocateprvt(state) == 0) {
-				return 0;
-			}
-		}
-	}
-	return 1;
+	return allocateextra(state);
 }
-
-
-#undef WNDNGUARDSZ
 
 #undef GETWINBFFSZ
 #undef GETTKNBFFSZ
@@ -349,7 +327,7 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 
 TDeflator*
-deflator_create(uintxx level, TAllocator* allocator)
+deflator_create(uintxx level, TAllocator* allctr)
 {
 	struct TDeflator* state;
 
@@ -358,23 +336,28 @@ deflator_create(uintxx level, TAllocator* allocator)
 		return NULL;
 	}
 
-	if (allocator) {
-		state = allocator->reserve(allocator->user, sizeof(struct TDEFLTPrvt));
+	if (allctr == NULL) {
+		allctr = (void*) ctb_defaultallocator(NULL);
 	}
-	else {
-		state = CTB_RESERVE(sizeof(struct TDEFLTPrvt));
-	}
+	state = allctr->request(sizeof(struct TDEFLTPrvt), allctr->user);
 	if (state == NULL) {
 		return NULL;
 	}
-	PRVT->allocator = allocator;
+	PRVT->allctr = allctr;
 
 	PRVT->window = NULL;
 	PRVT->lzlist = NULL;
-	PRVT->wnsize = PRVT->lzsize = 0;
-	PRVT->extra  = NULL;
 
-	deflator_reset(state, level);
+	PRVT->level = level;
+	if (allocatemem(state, getmeminfo(level)) == 0) {
+		deflator_destroy(state);
+		return NULL;
+	}
+	PRVT->windowend = PRVT->window + (PRVT->wnsize - WNDNGUARDSZ);
+	PRVT->lzlistend = PRVT->lzlist + (PRVT->lzsize);
+	setparameters(state, level);
+
+	deflator_reset(state);
 	if (state->error) {
 		deflator_destroy(state);
 		return NULL;
@@ -382,11 +365,22 @@ deflator_create(uintxx level, TAllocator* allocator)
 	return state;
 }
 
+#undef WNDNGUARDSZ
+
+
 static void
 resetcache(struct TDeflator* state)
 {
 	uintxx i;
 	uintxx j;
+
+	if (PRVT->level == 1) {
+		j = QMASK + 1;
+		for (i = 0; j > i; i++) {
+			PRVT->hlist[i] = 0;
+		}
+		return;
+	}
 
 	j = SMASK + 1;
 	for (i = 0; j > i; i++) {
@@ -414,26 +408,11 @@ resetfreqs(TDeflator* state)
 }
 
 void
-deflator_reset(TDeflator* state, uintxx level)
+deflator_reset(TDeflator* state)
 {
-	uintxx meminfo;
 	uint8* buffer;
 	uint8* end;
 	CTB_ASSERT(state);
-
-	meminfo = getmeminfo(level);
-	if (meminfo == 0) {
-		/* invalid level */
-		SETERROR(DEFLT_ELEVEL);
-		goto L_ERROR;
-	}
-
-	PRVT->level = level;
-	if (allocatemem(state, meminfo) == 0) {
-		SETERROR(DEFLT_EOOM);
-		goto L_ERROR;
-	}
-	setparameters(state, level);
 
 	state->state = 0;
 	state->flush = 0;
@@ -459,7 +438,6 @@ deflator_reset(TDeflator* state, uintxx level)
 
 	PRVT->bbuffer = 0;
 	PRVT->bcount  = 0;
-
 	if (PRVT->level) {
 		PRVT->base   = 0;
 		PRVT->cursor = 0;
@@ -469,39 +447,43 @@ deflator_reset(TDeflator* state, uintxx level)
 		resetcache(state);
 	}
 
-	/* we don't need this */
 	buffer = PRVT->window;
-	for (end = buffer + PRVT->wnsize; buffer < end;) {
-		*buffer++ = 0;
-		*buffer++ = 0;
-		*buffer++ = 0;
+	for (end = PRVT->windowend; buffer < end;) {
 		*buffer++ = 0;
 	}
 	PRVT->wend = PRVT->window;
-	return;
-
-L_ERROR:
-	SETSTATE(DEFLT_BADSTATE);
 }
 
 void
 deflator_destroy(TDeflator* state)
 {
+	uint16* lzlist;
+	uint8* window;
+
 	if (state == NULL) {
 		return;
 	}
 
-	if (PRVT->window) {
-		_release(PRVT, PRVT->window);
+	lzlist = PRVT->lzlist;
+	window = PRVT->window;
+	if (window) {
+		dispose_(PRVT, window, PRVT->wnsize * sizeof(PRVT->window[0]));
 	}
-	if (PRVT->lzlist) {
-		_release(PRVT, PRVT->lzlist);
+	if (lzlist) {
+		dispose_(PRVT, lzlist, PRVT->lzsize * sizeof(PRVT->lzlist[0]));
 	}
 
-	if (PRVT->extra) {
-		_release(PRVT, PRVT->extra);
+	if (PRVT->level == 1) {
+		if (PRVT->hlist) {
+			dispose_(PRVT, PRVT->hlist, (QMASK + 1) * sizeof(PRVT->hlist[0]));
+		}
 	}
-	_release(PRVT, state);
+	else {
+		if (PRVT->extra) {
+			dispose_(PRVT, PRVT->extra, sizeof(struct TDEFLTExtra));
+		}
+	}
+	dispose_(PRVT, state, sizeof(struct TDEFLTPrvt));
 }
 
 
@@ -612,6 +594,7 @@ endstream(struct TDeflator* state)
 static uintxx compress0(struct TDeflator* state);
 static uintxx compress1(struct TDeflator* state);
 static uintxx compress2(struct TDeflator* state);
+static uintxx compress3(struct TDeflator* state);
 
 static uintxx flushblck(struct TDeflator* state);
 
@@ -639,13 +622,20 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 						}
 						return r;
 					case 1:
+						/* flush is handled by this function */
+						r = compress1(state);
+						if (r == 0) {
+							SETSTATE(2);
+							continue;
+						}
+						return r;
 					case 2:
 					case 3:
 					case 4:
-						r = compress1(state);
+						r = compress2(state);
 						break;
 					default:  /* 5 6 7 8 9 */
-						r = compress2(state);
+						r = compress3(state);
 						break;
 				}
 
@@ -657,7 +647,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 
 			/* fallthrough */
 			case 1: {
-				if ((r = flushblck(state)) != 0) {
+				if ((r = flushblck(state))) {
 					return r;
 				}
 
@@ -1307,7 +1297,6 @@ buildtables(struct TDEFLTExtra* extra)
 
 #define EMIT(BB, BC, BITS, N) BB |= (BBTYPE) (BITS) << (BC); BC += (N);
 
-
 static uintxx
 emitlzfast(struct TDeflator* state)
 {
@@ -1453,6 +1442,7 @@ L_LOOP:
 		PRVT->zptr++;
 		goto L_LOOP;
 	}
+
 
 L_STATE1:
 	/* length */
@@ -1637,17 +1627,11 @@ flushblck(struct TDeflator* state)
 	PRVT->zend[0] = BLOCKENDSYMBOL;
 	PRVT->zend++;
 
+	PRVT->blocktype = BLOCKDNMC;
+
+	/* force an static block for small blocks */
 	if (total < 0x400) {
-		/* force an static block for small blocks */
 		PRVT->blocktype = BLOCKSTTC;
-	}
-	else {
-		if (PRVT->level == 1) {
-			PRVT->blocktype = BLOCKSTTC;
-		}
-		else {
-			PRVT->blocktype = BLOCKDNMC;
-		}
 	}
 
 	if (PRVT->blocktype == BLOCKDNMC) {
@@ -1697,30 +1681,26 @@ L_STATE3:
 
 
 CTB_INLINE void
-insert(struct TDeflator* state, uint16 offset, uint16 hhash)
+insert(struct TDeflator* state, uintxx offset, uintxx hash)
 {
 	uintxx hindex;
 
-	hindex = hhash & HMASK;
-
-	PRVT->chain[offset & SMASK] = PRVT->hlist[hindex];
+	PRVT->chain[offset & SMASK] = PRVT->hlist[hindex = hash & HMASK];
 	PRVT->hlist[hindex] = offset;
 }
 
 
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-	#define GETSHEAD3(B, N) ((*((uint32*) ((B) + (N)))) & 0xffffffL)
 	#define GETSHEAD4(B, N) ((*((uint32*) ((B) + (N)))))
 #else
-	#define GETSHEAD3(B, N) \
+	#define GETSHEAD4(B, N) \
 	    ((B)[(N) + 0] << 0x00) | \
 	    ((B)[(N) + 1] << 0x08) | \
-	    ((B)[(N) + 2] << 0x10)
-
-	#define GETSHEAD4(B, N) GETSHEAD3(B, N) | ((B)[(N) + 3] << 0x18)
+	    ((B)[(N) + 2] << 0x10) | \
+	    ((B)[(N) + 3] << 0x18)
 #endif
 
-#define GETHHASH(H) (((H) * 0x9e3779b1) >> 16)
+#define GETHHASH(H) (((H) * 0x9e3779b1ul) >> 16)
 
 
 void
@@ -1734,21 +1714,21 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 		SETSTATE(DEFLT_BADSTATE);
 		return;
 	}
-	if (PRVT->level == 0) {
+	if (PRVT->level == 0 || PRVT->level == 1) {
 		return;
 	}
 
-	if (size > WNDWSIZE)
+	if (size > WNDWSIZE) {
+		dict = (dict + size) - WNDWSIZE;
 		size = WNDWSIZE;
-
-	if (PRVT->level <= 4) {
-		for (i = 0; i < size - 2; i++) {
-			insert(state, (uint16) i, GETHHASH(GETSHEAD3(dict, i)));
-		}
 	}
-	else {
-		for (i = 0; i < size - 2; i++) {
-			insert(state, (uint16) i, GETHHASH(GETSHEAD4(dict, i)));
+
+	if (size >= 4) {
+		uintxx j;
+
+		j = size - 4;
+		for (i = 0; i <= j; i++) {
+			insert(state, i, GETHHASH(GETSHEAD4(dict, i)));
 		}
 	}
 	ctb_memcpy(PRVT->window, dict, size);
@@ -1977,31 +1957,33 @@ struct TMatch {
 	uintxx offset;
 };
 
-CTB_INLINE struct TMatch
-findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
+static struct TMatch
+findmatch(
+	struct TDeflator* state,
+	uint8* window,
+	uintxx cursor,
+	uint16 hash,
+	uintxx length)
 {
 	intxx  i;
 	uintxx next;
 	uint8* strbgn;
 	uint8* strend;
-	uintxx length;
 	uintxx offset;
 	uintxx rpos;
 	uintxx noffset;
 
-	length = minlength;
 	offset = 0;
-
-	strbgn = PRVT->window + PRVT->cursor;
+	strbgn = window + cursor;
 	strend = strbgn + MAXMATCH;
 	if (strend > PRVT->wend) {
 		strend = PRVT->wend;
 	}
 
 	/* base offset */
-	rpos = PRVT->cursor - PRVT->base;
+	rpos = cursor - PRVT->base;
 
-	next = PRVT->hlist[hhash & HMASK];
+	next = PRVT->hlist[hash & HMASK];
 	for (i = PRVT->maxchain; i > 0; i--) {
 		uintxx nlength;
 		uint8* pmatch;
@@ -2014,8 +1996,8 @@ findmatch(struct TDeflator* state, uint16 hhash, uintxx minlength)
 		}
 		pmatch = strbgn - noffset;
 		if (CTB_LIKELY(strbgn[length] == pmatch[length])) {
-
 			nlength = getmatchlength(strbgn, pmatch, strend);
+
 			if (nlength > length) {
 				length = nlength;
 				offset = noffset;
@@ -2160,25 +2142,308 @@ appendz(struct TDeflator* state, struct TMatch match, uintxx ls, uintxx ds)
 	 * 1------a aaaaaaaa | bbbbbbbb bbbbbbbb | cccccccc dddddddd */
 	PRVT->zend[0] = (uint16) (match.length | 0x8000);
 	PRVT->zend[1] = (uint16) (match.offset);
+	PRVT->zend++;
+	PRVT->zend++;
 
-	PRVT->zend[2] = (uint16) ((ls << 0x08) | (ds << 0x00));
-	PRVT->zend += 3;
+	PRVT->zend[0] = (uint16) ((ls << 0x08) | (ds << 0x00));
+	PRVT->zend++;
 }
 
-#define APPENDL(B, L) (*(B)++ = (uint16) (L))
-
+CTB_FORCEINLINE void
+appendl(struct TDeflator* state, uintxx literal)
+{
+	PRVT->zend[0] = (uint16) literal;
+	PRVT->zend++;
+}
 
 #define MINLOOKAHEAD (MINMATCH + MAXMATCH)
 
-/* greedy parser */
+
+static uintxx
+emitpending1(struct TDeflator* state)
+{
+	uintxx total;
+	uintxx count;
+	uint64 bb;
+
+#if defined(CTB_ENV64)
+	bb = PRVT->aux2;
+#else
+	bb = (PRVT->aux2 << 0x00) | (PRVT->aux3 << 0x20);
+#endif
+	for (total = PRVT->aux1; total; total -= count) {
+		count = 16;
+		if (count > total)
+			count = total;
+
+		if (tryemitbits(state, count) == 0) {
+			break;
+		}
+		putbits(state, (uint16) bb, count);
+		bb >>= count;
+	}
+	PRVT->aux1 = total;
+
+	if (total) {
+#if defined(CTB_ENV64)
+		PRVT->aux2 = bb;
+#else
+		PRVT->aux2 = (uint32) (bb >> 0x00);
+		PRVT->aux3 = (uint32) (bb >> 0x20);
+#endif
+	}
+	else {
+		PRVT->aux2 = 0;
+		PRVT->aux3 = 0;
+	}
+	return total;
+}
+
+static uintxx
+emitlz1(struct TDeflator* state, uintxx length, uintxx offset)
+{
+	uint32 lcode;
+	uint32 dcode;
+	uintxx lblen;
+	uintxx dblen;
+	uint64 bb;
+	uintxx lsymbol;
+	uintxx dsymbol;
+	struct THCode2 code2;
+
+	lsymbol = getlsymbol(length);
+	dsymbol = getdsymbol(offset);
+
+	/* length 15 + 5 */
+	code2 = slnscodes[lsymbol];
+	lcode = code2.code;
+	lblen = code2.bitlen + code2.bextra;
+	if (CTB_LIKELY(code2.bextra)) {
+		lcode = lcode | ((length - code2.base) << code2.bitlen);
+	}
+
+	/* distance 15 + 13 */
+	code2 = sdstcodes[dsymbol];
+	dcode = code2.code;
+	dblen = code2.bitlen + code2.bextra;
+	if (CTB_LIKELY(code2.bextra)) {
+		dcode = dcode | ((offset - code2.base) << code2.bitlen);
+	}
+
+	if (CTB_LIKELY(state->tend - state->target >= 8)) {
+		tryemitbits(state, lblen);
+		putbits(state, lcode, lblen);
+#if !defined(CTB_ENV64)
+		if (dblen > 20) {
+			tryemitbits(state, 20);
+			putbits(state, dcode, 20);
+			dcode >>= 20;
+			dblen = dblen - 20;
+		}
+#endif
+		tryemitbits(state, dblen);
+		putbits(state, dcode, dblen);
+		return 0;
+	}
+
+	bb = lcode | (((uint64) dcode) << lblen);
+#if defined(CTB_ENV64)
+	PRVT->aux2 = bb;
+#else
+	PRVT->aux2 = (uint32) (bb >> 0x00);
+	PRVT->aux3 = (uint32) (bb >> 0x20);
+#endif
+	PRVT->aux1 = lblen + dblen;
+
+	return emitpending1(state);
+}
+
+
+#if defined(__GNUC__)
+	#define PREFETCH(A) (__builtin_prefetch(A, 1, 0))
+#endif
+
+#if !defined(PREFETCH)
+	#define PREFETCH(A) (void) (A)
+#endif
+
+/* quick mode */
 static uintxx
 compress1(struct TDeflator* state)
 {
 	uintxx limit;
 	uintxx srcleft;
 	uintxx r;
+	uintxx cursor;
+	uintxx base;
+	uintxx hash;
+	uint8* window;
+	struct THCode1 code1;
+	uint16* ht;
+
+	if (PRVT->blockinit == 0) {
+		/* emit the block header */
+		if (tryemitbits(state, 3)) {
+			putbits(state, 0, 1);
+			putbits(state, 1, 2);
+		}
+		else {
+			return DEFLT_TGTEXHSTD;
+		}
+		PRVT->blockinit = 1;
+	}
+
+	switch (PRVT->substate) {
+		case 1:
+			if (emitpending1(state)) {
+				return DEFLT_TGTEXHSTD;
+			}
+			break;
+		case 2:
+			goto L_FLUSH;
+	}
+	PRVT->substate = 0;
+	ht = PRVT->hlist;
+
+L_LOOP:
+	limit = (uintxx) (PRVT->wend - PRVT->window);
+	if (limit - PRVT->cursor > MINLOOKAHEAD + 1) {
+		srcleft = (uintxx) (state->send - state->source);
+		if (state->flush == 0 || srcleft) {
+			limit -= MINLOOKAHEAD;
+		}
+	}
+	else {
+		srcleft = (uintxx) (state->send - state->source);
+		if (srcleft) {
+			limit = PRVT->cursor;
+		}
+		else {
+			if (state->flush == 0) {
+				return DEFLT_SRCEXHSTD;
+			}
+		}
+	}
+
+	cursor = PRVT->cursor; base = PRVT->base;
+	window = PRVT->window;
+
+	hash = GETHHASH(GETSHEAD4(window, cursor));
+	while (CTB_LIKELY(limit > cursor)) {
+		uintxx length;
+		uintxx offset;
+		uintxx n;
+
+		length = MINMATCH;
+		offset = 0;
+
+		n = (uint16) ((cursor - base) - ht[hash & QMASK]);
+		if (n && n <= WNDWSIZE) {
+			uint8* pmatch;
+			uint8* strbgn;
+			uint8* strend;
+
+			strend = (strbgn = window + cursor) + MAXMATCH;
+			if (strend > PRVT->wend) {
+				strend = PRVT->wend;
+			}
+
+			pmatch = strbgn - n;
+#if defined(CTB_FASTUNALIGNED)
+			if (((uint32*) strbgn)[0] == ((uint32*) pmatch)[0]) {
+				length = getmatchlength(strbgn + 4, pmatch + 4, strend) + 4;
+				offset = n;
+			}
+#else
+			length = getmatchlength(strbgn, pmatch, strend);
+			offset = n;
+#endif
+		}
+
+		ht[hash & QMASK] = (uint16) (cursor - base);
+		if (CTB_LIKELY(length > MINMATCH)) {
+			uintxx j;
+
+			j = cursor + 1;
+			ht[GETHHASH(GETSHEAD4(window, j)) & QMASK] = (uint16) (j - base);
+			j++;
+			ht[GETHHASH(GETSHEAD4(window, j)) & QMASK] = (uint16) (j - base);
+			j++;
+			ht[GETHHASH(GETSHEAD4(window, j)) & QMASK] = (uint16) (j - base);
+			j++;
+			cursor += length;
+
+			hash = GETHHASH(GETSHEAD4(window, cursor));
+			PREFETCH(ht + (hash & QMASK));
+			if (emitlz1(state, length, offset)) {
+				PRVT->substate = 1;
+
+				PRVT->cursor = cursor;
+				return DEFLT_TGTEXHSTD;
+			}
+		}
+		else {
+			/* literal 15 */
+			code1 = slitcodes[window[cursor]];
+			cursor++;
+
+			hash = GETHHASH(GETSHEAD4(window, cursor));
+			PREFETCH(ht + (hash & QMASK));
+			if (tryemitbits(state, code1.bitlen)) {
+				putbits(state, code1.code, code1.bitlen);
+			}
+			else {
+				PRVT->aux1 = code1.bitlen;
+				PRVT->aux2 = code1.code;
+				PRVT->aux3 = 0;
+				PRVT->substate = 1;
+
+				PRVT->cursor = cursor;
+				return DEFLT_TGTEXHSTD;
+			}
+		}
+	}
+
+	PRVT->cursor = cursor;
+	r = fillwindow(state);
+	if (CTB_LIKELY(r)) {
+		goto L_LOOP;
+	}
+
+L_FLUSH:
+	if (CTB_UNLIKELY(state->flush)) {
+		code1 = slitcodes[BLOCKENDSYMBOL];
+		if (tryemitbits(state, code1.bitlen)) {
+			putbits(state, code1.code, code1.bitlen);
+		}
+		else {
+			PRVT->substate = 2;
+			return DEFLT_TGTEXHSTD;
+		}
+		PRVT->aux1 = 0;
+		PRVT->aux2 = 0;
+		PRVT->aux3 = 0;
+		PRVT->substate  = 0;
+		PRVT->blockinit = 0;
+		return DEFLT_OK;
+	}
+
+	return DEFLT_SRCEXHSTD;
+}
+
+/* greedy parser */
+static uintxx
+compress2(struct TDeflator* state)
+{
+	uintxx limit;
+	uintxx srcleft;
+	uintxx r;
 	uintxx c;
 	uintxx skip;
+	uintxx cursor;
+	uintxx base;
+	uintxx hash;
+	uint8* window;
 	uintxx* lnsfrqs;
 	uintxx* dstfrqs;
 	uintxx* litfrqs;
@@ -2194,9 +2459,10 @@ compress1(struct TDeflator* state)
 
 L_LOOP:
 	limit = (uintxx) (PRVT->wend - PRVT->window);
-	if (limit - PRVT->cursor > MINLOOKAHEAD) {
-		if (state->flush == 0) {
-			limit -= MINLOOKAHEAD - 1;
+	if (limit - PRVT->cursor > MINLOOKAHEAD + 1) {
+		srcleft = (uintxx) (state->send - state->source);
+		if (state->flush == 0 || srcleft) {
+			limit -= MINLOOKAHEAD;
 		}
 	}
 	else {
@@ -2211,55 +2477,56 @@ L_LOOP:
 		}
 	}
 
-	while (CTB_LIKELY(limit > PRVT->cursor)) {
-		uintxx lsymbol;
-		uintxx dsymbol;
-		uint16 hash;
-		uint32 head;
+	cursor = PRVT->cursor; base = PRVT->base;
+	window = PRVT->window;
 
-		head = GETSHEAD3(PRVT->window, PRVT->cursor);
-		hash = GETHHASH(head);
+	hash = GETHHASH(GETSHEAD4(window, cursor));
+	while (CTB_LIKELY(limit > cursor)) {
+		match = findmatch(state, window, cursor, hash, MINMATCH);
 
-		match = findmatch(state, hash, MINMATCH - 1);
+		insert(state, cursor - base, hash);
+		if (CTB_LIKELY(match.length > MINMATCH)) {
+			uintxx lsymbol;
+			uintxx dsymbol;
 
-		insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
-		if (CTB_LIKELY(match.length >= MINMATCH)) {
 			lsymbol = getlsymbol(match.length);
 			dsymbol = getdsymbol(match.offset);
 
 			lnsfrqs[lsymbol]++;
 			dstfrqs[dsymbol]++;
-			appendz(state, match, lsymbol, dsymbol);
 			if (CTB_LIKELY(match.length <= PRVT->mininsert)) {
-				PRVT->cursor++;
+				cursor++;
 				for (skip = 1; match.length > skip; skip++) {
-					head = GETSHEAD3(PRVT->window, PRVT->cursor);
-					hash = GETHHASH(head);
-
-					insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
-					PRVT->cursor++;
+					hash = GETHHASH(GETSHEAD4(window, cursor));
+					insert(state, cursor - base, hash);
+					cursor++;
 				}
 			}
 			else {
-				PRVT->cursor += match.length;
+				cursor += match.length;
 			}
+
+			hash = GETHHASH(GETSHEAD4(window, cursor));
+			appendz(state, match, lsymbol, dsymbol);
 		}
 		else {
-			c = PRVT->window[PRVT->cursor];
-			APPENDL(PRVT->zend, c);
-			litfrqs[c]++;
+			c = window[cursor++];
 
-			PRVT->cursor++;
+			hash = GETHHASH(GETSHEAD4(window, cursor));
+			appendl(state, c);
+			litfrqs[c]++;
 		}
 
 		if (CTB_UNLIKELY(PRVT->zend + 4 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
+			PRVT->cursor   = cursor;
 			PRVT->hasinput = 1;
 			return 0;
 		}
 	}
 
+	PRVT->cursor = cursor;
 	r = fillwindow(state);
 	if (CTB_LIKELY(r)) {
 		goto L_LOOP;
@@ -2277,13 +2544,17 @@ L_LOOP:
 
 /* lazy parser */
 static uintxx
-compress2(struct TDeflator* state)
+compress3(struct TDeflator* state)
 {
 	uintxx limit;
 	uintxx srcleft;
 	uintxx minlength;
 	uintxx hasmatch;
 	uintxx skip;
+	uintxx cursor;
+	uintxx base;
+	uintxx hash;
+	uint8* window;
 	uintxx r;
 	uintxx c;
 	uintxx* lnsfrqs;
@@ -2311,7 +2582,8 @@ compress2(struct TDeflator* state)
 L_LOOP:
 	limit = (uintxx) (PRVT->wend - PRVT->window);
 	if (limit - PRVT->cursor > MINLOOKAHEAD + 1) {
-		if (state->flush == 0) {
+		srcleft = (uintxx) (state->send - state->source);
+		if (state->flush == 0 || srcleft) {
 			limit -= MINLOOKAHEAD;
 		}
 	}
@@ -2327,34 +2599,35 @@ L_LOOP:
 		}
 	}
 
-	while (CTB_LIKELY(limit > PRVT->cursor)) {
-		uint16 hash;
-		uint32 head;
+	cursor = PRVT->cursor; base = PRVT->base;
+	window = PRVT->window;
 
+	hash = GETHHASH(GETSHEAD4(window, cursor));
+	while (CTB_LIKELY(limit > cursor)) {
 		for (;;) {
-			head = GETSHEAD4(PRVT->window, PRVT->cursor);
-			hash = GETHHASH(head);
+			match = findmatch(state, window, cursor, hash, minlength);
 
-			match = findmatch(state, hash, minlength);
-
-			insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
-			PRVT->cursor++;
+			insert(state, cursor - base, hash);
+			cursor++;
 			if (CTB_LIKELY(hasmatch)) {
 				if (CTB_LIKELY(minlength >= match.length)) {
 					match = prevm;
 					skip++;
 				}
 				else {
-					c = PRVT->window[PRVT->cursor - 2];
+					c = window[cursor - 2];
 					litfrqs[c]++;
-					APPENDL(PRVT->zend, c);
+					appendl(state, c);
 				}
 			}
 			else {
 				if (CTB_LIKELY(match.length > MINMATCH)) {
 					hasmatch = 1;
 					skip = 1;
-					if (CTB_LIKELY(match.length < PRVT->nicematch)) {
+
+					if (CTB_LIKELY(match.length < PRVT->goodmatch)) {
+						hash = GETHHASH(GETSHEAD4(window, cursor));
+
 						/* try at the next position */
 						prevm     = match;
 						minlength = prevm.length;
@@ -2362,7 +2635,6 @@ L_LOOP:
 					}
 				}
 			}
-
 			break;
 		}
 
@@ -2377,32 +2649,33 @@ L_LOOP:
 			dstfrqs[dsymbol]++;
 			appendz(state, match, lsymbol, dsymbol);
 			for (; match.length > skip; skip++) {
-				head = GETSHEAD4(PRVT->window, PRVT->cursor);
-				hash = GETHHASH(head);
-
-				insert(state, (uint16) (PRVT->cursor - PRVT->base), hash);
-				PRVT->cursor++;
+				hash = GETHHASH(GETSHEAD4(window, cursor));
+				insert(state, cursor - base, hash);
+				cursor++;
 			}
 
 			hasmatch = 0;
 			minlength = MINMATCH;
 		}
 		else {
-			c = PRVT->window[PRVT->cursor - 1];
+			c = window[cursor - 1];
 			litfrqs[c]++;
 
-			APPENDL(PRVT->zend, c);
+			appendl(state, c);
 		}
 
+		hash = GETHHASH(GETSHEAD4(window, cursor));
 		if (CTB_UNLIKELY(PRVT->zend + 5 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
+			PRVT->cursor   = cursor;
 			PRVT->hasinput = 1;
 
 			return 0;
 		}
 	}
 
+	PRVT->cursor = cursor;
 	r = fillwindow(state);
 	if (CTB_LIKELY(r)) {
 		goto L_LOOP;
@@ -2418,8 +2691,7 @@ L_LOOP:
 	return DEFLT_SRCEXHSTD;
 }
 
-#undef APPENDL
-
+#undef PREFETCH
 #undef SETSTATE
 #undef SETERROR
 #undef PRVT
