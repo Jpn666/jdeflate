@@ -2169,7 +2169,7 @@ emitpending1(struct TDeflator* state)
 #if defined(CTB_ENV64)
 	bb = PRVT->aux2;
 #else
-	bb = (PRVT->aux2 << 0x00) | (PRVT->aux3 << 0x20);
+	bb = (((uint64) PRVT->aux2) << 0x00) | (((uint64) PRVT->aux3) << 0x20);
 #endif
 	for (total = PRVT->aux1; total; total -= count) {
 		count = 16;
