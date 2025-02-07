@@ -15,10 +15,14 @@ def getversion():
             return "0.0.0"
         return output.decode('utf-8').strip()
 
-    v = runcommand(["git", "describe", "--exact-match", "--tags"])
+    v = runcommand(["git", "describe", "--tags"])
     if v.startswith("v"):
         v = v[1:]
     v = v.strip()
+
+    m = v.split("-", 1)
+    v = m[0]
+
     s = v.split(".")
     try:
         int(s[0])
