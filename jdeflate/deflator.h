@@ -93,39 +93,39 @@ typedef struct TDeflator TDeflator;
 
 
 /*
- * */
+ * Create a deflator instance with the specified compression level. */
 TDeflator* deflator_create(uintxx level, TAllocator* allctr);
 
 /*
- * */
+ * Destroy a deflator instance. */
 void deflator_destroy(TDeflator*);
 
 /*
- * */
+ * Set the source buffer and size for the deflator instance. */
 CTB_INLINE void deflator_setsrc(TDeflator*, uint8* source, uintxx size);
 
 /*
- * */
+ * Set the target buffer and size for the deflator instance. */
 CTB_INLINE void deflator_settgt(TDeflator*, uint8* target, uintxx size);
 
 /*
- * */
+ * Get the number of bytes processed in the source buffer. */
 CTB_INLINE uintxx deflator_srcend(TDeflator*);
 
 /*
- * */
+ * Get the number of bytes written to the target buffer. */
 CTB_INLINE uintxx deflator_tgtend(TDeflator*);
 
 /*
- * */
+ * Compress data using the deflator instance. */
 eDEFLTResult deflator_deflate(TDeflator*, eDEFLTFlush flush);
 
 /*
- * */
+ * Set the dictionary for the deflator instance. */
 void deflator_setdctnr(TDeflator*, uint8* dict, uintxx size);
 
 /*
- * */
+ * Reset the deflator instance to its initial state. */
 void deflator_reset(TDeflator*);
 
 
