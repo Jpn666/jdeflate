@@ -337,7 +337,7 @@ deflator_create(uintxx level, TAllocator* allctr)
 	}
 
 	if (allctr == NULL) {
-		allctr = (void*) ctb_defaultallocator(NULL);
+		allctr = (void*) ctb_getdefaultallocator();
 	}
 	state = allctr->request(sizeof(struct TDEFLTPrvt), allctr->user);
 	if (state == NULL) {
@@ -1282,16 +1282,16 @@ buildtables(struct TDEFLTExtra* extra)
 #if defined(CTB_ENV64)
 
 #define ENSURE2ON32(T, B, C)
-#define ENSURE2ON64(T, B, C) if (CTB_LIKELY((C) > 48)) { W6(T, B); (C) -= 48; }
-#define ENSURE3ON64(T, B, C) if (CTB_LIKELY((C) > 40)) { W5(T, B); (C) -= 40; }
-#define ENSURE4ON64(T, B, C) if (CTB_LIKELY((C) > 32)) { W4(T, B); (C) -= 32; }
+#define ENSURE2ON64(T, B, C) if (CTB_EXPECT1(C > 48)) { W6(T, B); C -= 48; }
+#define ENSURE3ON64(T, B, C) if (CTB_EXPECT1(C > 40)) { W5(T, B); C -= 40; }
+#define ENSURE4ON64(T, B, C) if (CTB_EXPECT1(C > 32)) { W4(T, B); C -= 32; }
 
 #else
 
 #define ENSURE2ON64(T, B, C)
 #define ENSURE3ON64(T, B, C)
 #define ENSURE4ON64(T, B, C)
-#define ENSURE2ON32(T, B, C) if (CTB_LIKELY((C) > 16)) { W2(T, B); (C) -= 16; }
+#define ENSURE2ON32(T, B, C) if (CTB_EXPECT1((C) > 16)) { W2(T, B); (C) -= 16; }
 
 #endif
 
@@ -1325,7 +1325,7 @@ emitlzfast(struct TDeflator* state)
 
 	r = 1;
 	while ((uintxx) (state->tend - target) >= (8 + (sizeof(BBTYPE) << 1))) {
-		if (CTB_LIKELY(lzlist[0] < 0x8000)) {
+		if (CTB_EXPECT1(lzlist[0] < 0x8000)) {
 			code1 = littable[lzlist[0]];
 
 			/* 15 */
@@ -1333,7 +1333,7 @@ emitlzfast(struct TDeflator* state)
 			ENSURE2ON32(target, bb, bc);
 			EMIT(bb, bc, code1.code, code1.bitlen);
 
-			if (CTB_UNLIKELY(lzlist[0] == BLOCKENDSYMBOL)) {
+			if (CTB_EXPECT0(lzlist[0] == BLOCKENDSYMBOL)) {
 				r = 0;
 				goto L_DONE;
 			}
@@ -1349,7 +1349,7 @@ emitlzfast(struct TDeflator* state)
 		ENSURE2ON32(target, bb, bc);
 		EMIT(bb, bc, lcode.code, lcode.bitlen);
 
-		if (CTB_LIKELY(lcode.bextra)) {
+		if (CTB_EXPECT1(lcode.bextra)) {
 			extra = (lzlist[0] - (uintxx) (0x8000)) - lcode.base;
 
 			ENSURE2ON32(target, bb, bc);
@@ -1413,7 +1413,7 @@ emitlz(struct TDeflator* state)
 	}
 
 L_LOOP:
-	if (CTB_UNLIKELY(fastcheck)) {
+	if (CTB_EXPECT0(fastcheck)) {
 		uintxx remaining = (uintxx) (state->tend - state->target);
 		if (remaining >= ((sizeof(BBTYPE) << 1) << 2)) {
 			r = emitlzfast(state);
@@ -1436,7 +1436,7 @@ L_LOOP:
 			return 1;
 		}
 
-		if (CTB_UNLIKELY(PRVT->zptr[0] == BLOCKENDSYMBOL)) {
+		if (CTB_EXPECT0(PRVT->zptr[0] == BLOCKENDSYMBOL)) {
 			goto L_DONE;
 		}
 		PRVT->zptr++;
@@ -1794,7 +1794,7 @@ fillwindow(struct TDeflator* state)
 	wleft = (uintxx) (PRVT->windowend - PRVT->wend);
 	total = (uintxx) (state->send - state->source);
 
-	if (CTB_LIKELY(total > wleft) && (CTB_LIKELY(wleft < 0x400))) {
+	if (CTB_EXPECT1(total > wleft) && (CTB_EXPECT1(wleft < 0x400))) {
 		uintxx slide;
 
 		/* we use this to get the offset in the window
@@ -1991,11 +1991,11 @@ findmatch(
 		/* we use modular arithmetic here, so there is no need to shift
 		 * the cache table entries each time we slide the window */
 		noffset = (uint16) (rpos - next);
-		if (CTB_UNLIKELY(noffset > WNDWSIZE || noffset == 0)) {
+		if (CTB_EXPECT0(noffset > WNDWSIZE || noffset == 0)) {
 			break;
 		}
 		pmatch = strbgn - noffset;
-		if (CTB_LIKELY(strbgn[length] == pmatch[length])) {
+		if (CTB_EXPECT1(strbgn[length] == pmatch[length])) {
 			nlength = getmatchlength(strbgn, pmatch, strend);
 
 			if (nlength > length) {
@@ -2218,7 +2218,7 @@ emitlz1(struct TDeflator* state, uintxx length, uintxx offset)
 	code2 = slnscodes[lsymbol];
 	lcode = code2.code;
 	lblen = code2.bitlen + code2.bextra;
-	if (CTB_LIKELY(code2.bextra)) {
+	if (CTB_EXPECT1(code2.bextra)) {
 		lcode = lcode | ((length - code2.base) << code2.bitlen);
 	}
 
@@ -2226,11 +2226,11 @@ emitlz1(struct TDeflator* state, uintxx length, uintxx offset)
 	code2 = sdstcodes[dsymbol];
 	dcode = code2.code;
 	dblen = code2.bitlen + code2.bextra;
-	if (CTB_LIKELY(code2.bextra)) {
+	if (CTB_EXPECT1(code2.bextra)) {
 		dcode = dcode | ((offset - code2.base) << code2.bitlen);
 	}
 
-	if (CTB_LIKELY(state->tend - state->target >= 8)) {
+	if (CTB_EXPECT1(state->tend - state->target >= 8)) {
 		tryemitbits(state, lblen);
 		putbits(state, lcode, lblen);
 #if !defined(CTB_ENV64)
@@ -2329,7 +2329,7 @@ L_LOOP:
 	window = PRVT->window;
 
 	hash = GETHHASH(GETSHEAD4(window, cursor));
-	while (CTB_LIKELY(limit > cursor)) {
+	while (CTB_EXPECT1(limit > cursor)) {
 		uintxx length;
 		uintxx offset;
 		uintxx n;
@@ -2361,7 +2361,7 @@ L_LOOP:
 		}
 
 		ht[hash & QMASK] = (uint16) (cursor - base);
-		if (CTB_LIKELY(length > MINMATCH)) {
+		if (CTB_EXPECT1(length > MINMATCH)) {
 			uintxx j;
 
 			j = cursor + 1;
@@ -2406,12 +2406,12 @@ L_LOOP:
 
 	PRVT->cursor = cursor;
 	r = fillwindow(state);
-	if (CTB_LIKELY(r)) {
+	if (CTB_EXPECT1(r)) {
 		goto L_LOOP;
 	}
 
 L_FLUSH:
-	if (CTB_UNLIKELY(state->flush)) {
+	if (CTB_EXPECT0(state->flush)) {
 		code1 = slitcodes[BLOCKENDSYMBOL];
 		if (tryemitbits(state, code1.bitlen)) {
 			putbits(state, code1.code, code1.bitlen);
@@ -2481,11 +2481,11 @@ L_LOOP:
 	window = PRVT->window;
 
 	hash = GETHHASH(GETSHEAD4(window, cursor));
-	while (CTB_LIKELY(limit > cursor)) {
+	while (CTB_EXPECT1(limit > cursor)) {
 		match = findmatch(state, window, cursor, hash, MINMATCH);
 
 		insert(state, cursor - base, hash);
-		if (CTB_LIKELY(match.length > MINMATCH)) {
+		if (CTB_EXPECT1(match.length > MINMATCH)) {
 			uintxx lsymbol;
 			uintxx dsymbol;
 
@@ -2494,7 +2494,7 @@ L_LOOP:
 
 			lnsfrqs[lsymbol]++;
 			dstfrqs[dsymbol]++;
-			if (CTB_LIKELY(match.length <= PRVT->mininsert)) {
+			if (CTB_EXPECT1(match.length <= PRVT->mininsert)) {
 				cursor++;
 				for (skip = 1; match.length > skip; skip++) {
 					hash = GETHHASH(GETSHEAD4(window, cursor));
@@ -2517,7 +2517,7 @@ L_LOOP:
 			litfrqs[c]++;
 		}
 
-		if (CTB_UNLIKELY(PRVT->zend + 4 > PRVT->lzlistend)) {
+		if (CTB_EXPECT0(PRVT->zend + 4 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
 			PRVT->cursor   = cursor;
@@ -2528,11 +2528,11 @@ L_LOOP:
 
 	PRVT->cursor = cursor;
 	r = fillwindow(state);
-	if (CTB_LIKELY(r)) {
+	if (CTB_EXPECT1(r)) {
 		goto L_LOOP;
 	}
 
-	if (CTB_UNLIKELY(state->flush)) {
+	if (CTB_EXPECT0(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */
@@ -2603,14 +2603,14 @@ L_LOOP:
 	window = PRVT->window;
 
 	hash = GETHHASH(GETSHEAD4(window, cursor));
-	while (CTB_LIKELY(limit > cursor)) {
+	while (CTB_EXPECT1(limit > cursor)) {
 		for (;;) {
 			match = findmatch(state, window, cursor, hash, minlength);
 
 			insert(state, cursor - base, hash);
 			cursor++;
-			if (CTB_LIKELY(hasmatch)) {
-				if (CTB_LIKELY(minlength >= match.length)) {
+			if (CTB_EXPECT1(hasmatch)) {
+				if (CTB_EXPECT1(minlength >= match.length)) {
 					match = prevm;
 					skip++;
 				}
@@ -2621,11 +2621,11 @@ L_LOOP:
 				}
 			}
 			else {
-				if (CTB_LIKELY(match.length > MINMATCH)) {
+				if (CTB_EXPECT1(match.length > MINMATCH)) {
 					hasmatch = 1;
 					skip = 1;
 
-					if (CTB_LIKELY(match.length < PRVT->goodmatch)) {
+					if (CTB_EXPECT1(match.length < PRVT->goodmatch)) {
 						hash = GETHHASH(GETSHEAD4(window, cursor));
 
 						/* try at the next position */
@@ -2638,7 +2638,7 @@ L_LOOP:
 			break;
 		}
 
-		if (CTB_LIKELY(hasmatch)) {
+		if (CTB_EXPECT1(hasmatch)) {
 			uintxx lsymbol;
 			uintxx dsymbol;
 
@@ -2665,7 +2665,7 @@ L_LOOP:
 		}
 
 		hash = GETHHASH(GETSHEAD4(window, cursor));
-		if (CTB_UNLIKELY(PRVT->zend + 5 > PRVT->lzlistend)) {
+		if (CTB_EXPECT0(PRVT->zend + 5 > PRVT->lzlistend)) {
 			/* flush */
 			SETSTATE(1);
 			PRVT->cursor   = cursor;
@@ -2677,11 +2677,11 @@ L_LOOP:
 
 	PRVT->cursor = cursor;
 	r = fillwindow(state);
-	if (CTB_LIKELY(r)) {
+	if (CTB_EXPECT1(r)) {
 		goto L_LOOP;
 	}
 
-	if (CTB_UNLIKELY(state->flush)) {
+	if (CTB_EXPECT0(state->flush)) {
 		SETSTATE(1);
 		PRVT->hasinput = 0;
 		/* no more input */

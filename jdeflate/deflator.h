@@ -137,7 +137,7 @@ deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 {
 	CTB_ASSERT(state);
 
-	if (CTB_UNLIKELY(state->flush)) {
+	if (CTB_EXPECT0(state->flush)) {
 		if (state->error) {
 			state->error = DEFLT_EINCORRECTUSE;
 			state->state = DEFLT_BADSTATE;
