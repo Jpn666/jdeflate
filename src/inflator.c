@@ -19,30 +19,54 @@
 
 #if !defined(AUTOINCLUDE_1)
 
-/* deflate format definitions */
-#define DEFLT_MAXBITS    15
-#define DEFLT_WINDOWSZ   32768
-
-#define WNDWSIZE DEFLT_WINDOWSZ
-
-
-/* root bits for main tables */
-#define LROOTBITS 9
-#define DROOTBITS 7
-#define CROOTBITS 7
+/* Deflate format definitions */
+#define DEFLT_MAXBITS  15
+#define WNDWSIZE       32768
 
 #define DEFLT_LMAXSYMBOL 288
 #define DEFLT_DMAXSYMBOL 32
 #define DEFLT_CMAXSYMBOL 19
 
+/* Root bits for main tables */
+#define LROOTBITS 10
+#define DROOTBITS 8
+#define CROOTBITS 7
 
-/* these values were calculated using enough in zlib/examples, if the
+
+/* These values were calculated using enough in zlib/examples, if the
  * rootbits values are changed these values must be recalculated */
-#define ENOUGHL 854  /* enough 288 9 15 */
-#define ENOUGHD 402  /* enough  32 7 15 */
+#if LROOTBITS ==  8
+	#define ENOUGHL 660
+#endif
+#if LROOTBITS ==  9
+	#define ENOUGHL 852
+#endif
+#if LROOTBITS == 10
+	#define ENOUGHL 1332
+#endif
+#if LROOTBITS == 11
+	#define ENOUGHL 2340
+#endif
+
+#if DROOTBITS ==  8
+	#define ENOUGHD 400
+#endif
+#if DROOTBITS ==  9
+	#define ENOUGHD 592
+#endif
+#if DROOTBITS == 10
+	#define ENOUGHD 1072
+#endif
+#if DROOTBITS == 11
+	#define ENOUGHD 2080
+#endif
+
+#if !defined(ENOUGHL) || !defined(ENOUGHD)
+	#error "table size not defined"
+#endif
 
 
-/* private stuff */
+/* Private stuff */
 struct TINFLTPrvt {
 	/* public fields */
 	struct TInflator hidden;
@@ -60,30 +84,8 @@ struct TINFLTPrvt {
 	uintxx aux4;
 
 	/* decoding tables */
-	struct TINFLTTEntry* ltable;
-	struct TINFLTTEntry* dtable;
-
-	/* dynamic tables (trees) */
-	struct TTINFLTTables {
-		/* */
-		struct TINFLTTEntry {
-			/* the symbol if it's a literal, a distance or length base
-			* value, or a subtable offset if the code length is larger than
-			* rootbits */
-			uint16 info;
-
-			/* extra bits or tag */
-			uint8 etag;
-			uint8 length;   /* length of the code */
-		}
-		symbols[
-			ENOUGHL +
-			ENOUGHD
-		];
-
-		uint16 lengths[DEFLT_LMAXSYMBOL + DEFLT_DMAXSYMBOL];
-	}
-	*tables;
+	uint32* ltable;
+	uint32* dtable;
 
 	/* custom allocator */
 	struct TAllocator* allctr;
@@ -97,9 +99,21 @@ struct TINFLTPrvt {
 	uintxx bcount;
 
 	/* window buffer */
-	uintxx count;          /* bytes avaible in the window buffer + target */
-	uintxx end;            /* window buffer end */
-	uint8  window[WNDWSIZE];
+	uintxx wndnend;  /* window buffer end and total bytes */
+	uintxx wndncnt;
+
+	/* dynamic tables (trees) */
+	struct TTINFLTTables {
+		/* */
+		uint32 symbols[
+			ENOUGHL + ENOUGHD
+		];
+
+		uint16 lengths[DEFLT_LMAXSYMBOL + DEFLT_DMAXSYMBOL];
+	}
+	*tables;
+
+	uint8 wndnbuffer[WNDWSIZE + 32];
 };
 
 #endif
@@ -165,15 +179,14 @@ inflator_reset(TInflator* state)
 	state->finalinput = 0;
 
 	state->source = NULL;
-	state->sbgn = NULL;
-	state->send = NULL;
-
+	state->sbgn   = NULL;
+	state->send   = NULL;
 	state->target = NULL;
-	state->tbgn = NULL;
-	state->tend = NULL;
+	state->tbgn   = NULL;
+	state->tend   = NULL;
 
 	/* private fields */
-	PRVT->final = 0;
+	PRVT->final    = 0;
 	PRVT->substate = 0;
 
 	PRVT->used = 0;
@@ -185,9 +198,8 @@ inflator_reset(TInflator* state)
 
 	PRVT->bbuffer = 0;
 	PRVT->bcount  = 0;
-
-	PRVT->count = 0;
-	PRVT->end   = 0;
+	PRVT->wndnend = 0;
+	PRVT->wndncnt = 0;
 
 	/* */
 	if (PRVT->tables == NULL) {
@@ -319,56 +331,52 @@ reverseinc(uint16 n, uintxx length)
 }
 
 
-/* tags for the table entries, 0 to 13 is used to indicate the
- * extra bits if the symbol is not a literal */
-#define LITERALSYMBOL 0x10
-#define ENDOFBLOCK    0x11
-#define SUBTABLEENTRY 0x12
-#define INVALIDCODE   0x13
+/* Tags for the table entries */
+#define TAG_LIT 0x80000000  /* literal */
+
+#define TAG_NON 0x00008000  /* not a literal-length or distance */
+#define TAG_END 0x00004000  /* end of block */
+#define TAG_SUB 0x00002000  /* subtable */
 
 
-/* symbol info */
-struct TSInfo {
-	uint16 base;
-	uint8  extrabits;
+#define DOENTRY(BASE, EXTRA) (((BASE) << 16) | ((EXTRA) << 8))
+
+/* Length base value and extra bits */
+static const uint32 lnsinfo[] = {
+	DOENTRY(0x0000, 0x00), DOENTRY(0x0003, 0x00),
+	DOENTRY(0x0004, 0x00), DOENTRY(0x0005, 0x00),
+	DOENTRY(0x0006, 0x00), DOENTRY(0x0007, 0x00),
+	DOENTRY(0x0008, 0x00), DOENTRY(0x0009, 0x00),
+	DOENTRY(0x000a, 0x00), DOENTRY(0x000b, 0x01),
+	DOENTRY(0x000d, 0x01), DOENTRY(0x000f, 0x01),
+	DOENTRY(0x0011, 0x01), DOENTRY(0x0013, 0x02),
+	DOENTRY(0x0017, 0x02), DOENTRY(0x001b, 0x02),
+	DOENTRY(0x001f, 0x02), DOENTRY(0x0023, 0x03),
+	DOENTRY(0x002b, 0x03), DOENTRY(0x0033, 0x03),
+	DOENTRY(0x003b, 0x03), DOENTRY(0x0043, 0x04),
+	DOENTRY(0x0053, 0x04), DOENTRY(0x0063, 0x04),
+	DOENTRY(0x0073, 0x04), DOENTRY(0x0083, 0x05),
+	DOENTRY(0x00a3, 0x05), DOENTRY(0x00c3, 0x05),
+	DOENTRY(0x00e3, 0x05), DOENTRY(0x0102, 0x00)
 };
 
-/* length base value and extra bits */
-static const struct TSInfo lnsinfo[] = {
-	{0x0100, 0x11}, {0x0003, 0x00},  /* <- end of block */
-	{0x0004, 0x00}, {0x0005, 0x00},
-	{0x0006, 0x00}, {0x0007, 0x00},
-	{0x0008, 0x00}, {0x0009, 0x00},
-	{0x000a, 0x00}, {0x000b, 0x01},
-	{0x000d, 0x01}, {0x000f, 0x01},
-	{0x0011, 0x01}, {0x0013, 0x02},
-	{0x0017, 0x02}, {0x001b, 0x02},
-	{0x001f, 0x02}, {0x0023, 0x03},
-	{0x002b, 0x03}, {0x0033, 0x03},
-	{0x003b, 0x03}, {0x0043, 0x04},
-	{0x0053, 0x04}, {0x0063, 0x04},
-	{0x0073, 0x04}, {0x0083, 0x05},
-	{0x00a3, 0x05}, {0x00c3, 0x05},
-	{0x00e3, 0x05}, {0x0102, 0x00}
-};
-
-/* distance base value and extra bits */
-static const struct TSInfo dstinfo[] = {
-	{0x0001, 0x00}, {0x0002, 0x00},
-	{0x0003, 0x00}, {0x0004, 0x00},
-	{0x0005, 0x01}, {0x0007, 0x01},
-	{0x0009, 0x02}, {0x000d, 0x02},
-	{0x0011, 0x03}, {0x0019, 0x03},
-	{0x0021, 0x04}, {0x0031, 0x04},
-	{0x0041, 0x05}, {0x0061, 0x05},
-	{0x0081, 0x06}, {0x00c1, 0x06},
-	{0x0101, 0x07}, {0x0181, 0x07},
-	{0x0201, 0x08}, {0x0301, 0x08},
-	{0x0401, 0x09}, {0x0601, 0x09},
-	{0x0801, 0x0a}, {0x0c01, 0x0a},
-	{0x1001, 0x0b}, {0x1801, 0x0b},
-	{0x2001, 0x0c}, {0x3001, 0x0c},
-	{0x4001, 0x0d}, {0x6001, 0x0d}
+/* Distance base value and extra bits */
+static const uint32 dstinfo[] = {
+	DOENTRY(0x0001, 0x00), DOENTRY(0x0002, 0x00),
+	DOENTRY(0x0003, 0x00), DOENTRY(0x0004, 0x00),
+	DOENTRY(0x0005, 0x01), DOENTRY(0x0007, 0x01),
+	DOENTRY(0x0009, 0x02), DOENTRY(0x000d, 0x02),
+	DOENTRY(0x0011, 0x03), DOENTRY(0x0019, 0x03),
+	DOENTRY(0x0021, 0x04), DOENTRY(0x0031, 0x04),
+	DOENTRY(0x0041, 0x05), DOENTRY(0x0061, 0x05),
+	DOENTRY(0x0081, 0x06), DOENTRY(0x00c1, 0x06),
+	DOENTRY(0x0101, 0x07), DOENTRY(0x0181, 0x07),
+	DOENTRY(0x0201, 0x08), DOENTRY(0x0301, 0x08),
+	DOENTRY(0x0401, 0x09), DOENTRY(0x0601, 0x09),
+	DOENTRY(0x0801, 0x0a), DOENTRY(0x0c01, 0x0a),
+	DOENTRY(0x1001, 0x0b), DOENTRY(0x1801, 0x0b),
+	DOENTRY(0x2001, 0x0c), DOENTRY(0x3001, 0x0c),
+	DOENTRY(0x4001, 0x0d), DOENTRY(0x6001, 0x0d)
 };
 
 
@@ -377,19 +385,20 @@ static const struct TSInfo dstinfo[] = {
 #define CTABLEMODE 2
 
 static uintxx
-buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
+buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 {
+	intxx left;
+	intxx i;
+	intxx j;
+	uintxx limit;
 	uint16 code;
 	uintxx mlen;
-	intxx  left;
-	intxx  i;
-	intxx  j;
 	uintxx symbol;
 	uintxx length;
 	uintxx mbits;
 	uintxx mmask;
-	struct TINFLTTEntry* entry;
-	const struct TSInfo* sinfo;
+	uint32* entry;
+	const uint32* sinfo;
 
 	uint16 counts[DEFLT_MAXBITS + 1];
 	uint16 ncodes[DEFLT_MAXBITS + 1];
@@ -400,6 +409,14 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		case DTABLEMODE: mbits = DROOTBITS; break;
 		default:
 			mbits = CROOTBITS;
+	}
+
+	limit = ENOUGHD;
+	if (mode == LTABLEMODE) {
+		limit = ENOUGHL;
+	}
+	for (i = 0; (uintxx) i < limit; i++) {
+		table[i] = 0x00;
 	}
 
 	for (i = 0; i <= DEFLT_MAXBITS; i++) {
@@ -417,19 +434,11 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		 * One distance code of zero bits means that there are no distance
 		 * codes used at all (the data is all literals). */
 		if (mode == DTABLEMODE) {
-			for (i = 0; (uintxx) i < ((uintxx) 1L << mbits); i++) {
-				entry = table + i;
-
-				entry->info = 0xffff;
-				entry->etag = INVALIDCODE;
-				entry->length = 15;
-			}
 			return 0;
 		}
 		/* we need at least one symbol (256) for literal-length codes */
 		return INFLT_ERROR;
 	}
-
 	counts[0] = 0;
 
 	/* get the longest length */
@@ -449,6 +458,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		}
 	}
 	if (left) {
+		/* incomplete */
 		if (mlen != 1) {
 			return INFLT_ERROR;
 		}
@@ -472,11 +482,7 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		uintxx offset;
 		uintxx r;
 
-		/* setup the secondary tables */
-		for (i = 0; (uintxx) i <= mmask; i++) {
-			table[i].etag = 0;
-		}
-
+		/* herw we mark the entries on the main table as sub tables */
 		offset = mmask + 1;
 		for (r = mlen - mbits; r; r--) {
 			count = counts[mbits + r];
@@ -491,26 +497,16 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 
 			for (i = 0; i < j; i++) {
 				entry = table + code;
-				if (entry->etag == SUBTABLEENTRY) {
+				if (entry[0] & TAG_SUB) {
 					continue;
 				}
-				entry->etag = SUBTABLEENTRY;
-				entry->info = (uint16) offset;
-				entry->length = (uint8) (mbits + r);
+				entry[0] = TAG_NON | TAG_SUB | (offset << 16) | (mbits + r);
 
 				code = reverseinc(code, mbits);
-				offset += (uintxx) 1L << r;
-			}
-		}
-
-		if (mode == DTABLEMODE) {
-			if (offset > ENOUGHD) {
-				return INFLT_ERROR;
-			}
-		}
-		else {
-			if (offset > ENOUGHL) {
-				return INFLT_ERROR;
+				offset += (uintxx) 1 << r;
+				if (offset > limit) {
+					return INFLT_ERROR;
+				}
 			}
 		}
 	}
@@ -518,30 +514,38 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 	/* populate the table */
 	code = 0;
 	for (symbol = 0; symbol < n; symbol++) {
-		struct TINFLTTEntry e;
+		uint32 e;
 
 		length = lengths[symbol];
-		if (length == 0){
+		if (length == 0) {
 			continue;
 		}
 
 		if (mode == DTABLEMODE || symbol >= 256) {
-			e.info = sinfo[symbol].base;
-			e.etag = sinfo[symbol].extrabits;
+			if (symbol == 256) {
+				e = TAG_NON | TAG_END | (256 << 16);
+			}
+			else {
+				e = sinfo[symbol];
+			}
 		}
 		else {
-			e.info = (uint16) symbol;
-			e.etag = LITERALSYMBOL;
+			e = symbol << 16;
+			if (mode == LTABLEMODE) {
+				e |= TAG_LIT;
+			}
 		}
-		e.length = (uint8) length;
+		e |= length;
 
 		code = ncodes[length];
 		ncodes[length] = reverseinc(code, length);
 		if (length > (uintxx) mbits) {
+			uint32 s;
+
 			/* secondary table */
-			entry = table + (code & mmask);
-			j = entry->length - length;
-			i = entry->info;
+			s = table[code & mmask];
+			j = ((uint8) s) - length;
+			i = s >> 16;
 
 			length -= mbits;
 			code  >>= mbits;
@@ -556,29 +560,14 @@ buildtable(uint16* lengths, uintxx n, struct TINFLTTEntry* table, uintxx mode)
 		}
 	}
 
-	/* RFC:
-	 * If only one distance code is used, it is encoded using one bit, not
-	 * zero bits; in this case there is a single code length of one, with one
-	 * unused code. */
-	if (mlen == 1 && code == 0) {
-		code = 1;
-
-		for (j = ((uintxx) 1 << (mbits - 1)) - 1; j >= 0; j--) {
-			entry = table + (code | (j << 1));
-
-			entry->info = 0xffff;
-			entry->etag = INVALIDCODE;
-			entry->length = 15;
-		}
-	}
 	return 0;
 }
 
 
 #if defined(CTB_ENV64)
-	#define BBTYPE uint64
+	typedef uint64 bitbuffer;
 #else
-	#define BBTYPE uint32
+	typedef uint32 bitbuffer;
 #endif
 
 /*
@@ -591,7 +580,7 @@ tryreadbits(struct TInflator* state, uintxx n)
 		if (state->source >= state->send) {
 			return 0;
 		}
-		PRVT->bbuffer |= (BBTYPE) *state->source++ << PRVT->bcount;
+		PRVT->bbuffer |= ((bitbuffer) *state->source++) << PRVT->bcount;
 	}
 	return 1;
 }
@@ -600,7 +589,7 @@ CTB_FORCEINLINE bool
 fetchbyte(struct TInflator* state)
 {
 	if (state->source < state->send) {
-		PRVT->bbuffer |= (BBTYPE) *state->source++ << PRVT->bcount;
+		PRVT->bbuffer |= ((bitbuffer) *state->source++) << PRVT->bcount;
 		PRVT->bcount += 8;
 		return 1;
 	}
@@ -615,12 +604,13 @@ dropbits(struct TInflator* state, uintxx n)
 }
 
 CTB_FORCEINLINE uintxx
-getbits(struct TInflator* state, uintxx n)
+readbits(struct TInflator* state, uintxx n)
 {
-	return PRVT->bbuffer & ((((BBTYPE) 1) << n) - 1);
+	return PRVT->bbuffer & ((((bitbuffer) 1) << n) - 1);
 }
 
-static uintxx
+
+static void
 updatewindow(struct TInflator* state)
 {
 	uintxx total;
@@ -629,40 +619,80 @@ updatewindow(struct TInflator* state)
 
 	total = (uintxx) (state->target - state->tbgn);
 	if (total == 0) {
-		return 0;
+		return;
 	}
 
-	if (total > WNDWSIZE) {
-		total = WNDWSIZE;
+	if (total >= WNDWSIZE) {
+		ctb_memcpy(PRVT->wndnbuffer, state->target - WNDWSIZE, WNDWSIZE);
+
+		PRVT->wndncnt = WNDWSIZE;
+		PRVT->wndnend = WNDWSIZE;
+		return;
 	}
+
 	begin = state->target - total;
-	if (PRVT->count < WNDWSIZE) {
-		uintxx bytes;
-
-		bytes = PRVT->count + total;
-		if (bytes > WNDWSIZE)
-			bytes = WNDWSIZE;
-		PRVT->count = bytes;
+	if (PRVT->wndncnt < WNDWSIZE) {
+		PRVT->wndncnt += total;
+		if (PRVT->wndncnt > WNDWSIZE)
+			PRVT->wndncnt = WNDWSIZE;
 	}
 
-	maxrun = WNDWSIZE - PRVT->end;
+	maxrun = WNDWSIZE - PRVT->wndnend;
 	if (total < maxrun)
 		maxrun = total;
-	ctb_memcpy(PRVT->window + PRVT->end, begin, maxrun);
+	ctb_memcpy(PRVT->wndnbuffer + PRVT->wndnend, begin, maxrun);
 
 	total -= maxrun;
 	if (total) {
-		ctb_memcpy(PRVT->window, begin + maxrun, total);
-		PRVT->end = total;
+		ctb_memcpy(PRVT->wndnbuffer, begin + maxrun, total);
+		PRVT->wndnend = total;
 	}
 	else {
-		PRVT->end = PRVT->end + maxrun;
+		PRVT->wndnend = PRVT->wndnend + maxrun;
 	}
-	return 0;
 }
 
 
-static uintxx decodeblck(struct TInflator* state);
+CTB_INLINE void
+setstatictables(struct TInflator* state)
+{
+#if LROOTBITS == 10 && DROOTBITS == 8
+	PRVT->ltable = (void*) lsttctable;
+	PRVT->dtable = (void*) dsttctable;
+#else
+	uintxx j;
+	struct TTINFLTTables * tables;
+
+	tables = PRVT->tables;
+
+	PRVT->ltable = tables->symbols;
+	PRVT->dtable = tables->symbols + ENOUGHL;
+
+	/* literal-lengths */
+	j = 0;
+	for (; j < 144; j++)
+		tables->lengths[j] = 8;
+	for (; j < 256; j++)
+		tables->lengths[j] = 9;
+	for (; j < 280; j++)
+		tables->lengths[j] = 7;
+	for (; j < 288; j++)
+		tables->lengths[j] = 8;
+
+	j = buildtable(tables->lengths, 288, PRVT->ltable, LTABLEMODE);
+	CTB_ASSERT(j == 0);
+
+	/* distances */
+	j = 0;
+	for (; j < 32; j++)
+		tables->lengths[j] = 5;
+	j = buildtable(tables->lengths,  32, PRVT->dtable, DTABLEMODE);
+	CTB_ASSERT(j == 0);
+#endif
+}
+
+
+static uintxx decodeblock(struct TInflator* state);
 
 static uintxx decodestrd(struct TInflator* state);
 static uintxx decodednmc(struct TInflator* state);
@@ -677,9 +707,9 @@ inflator_inflate(TInflator* state, uintxx final)
 	}
 
 	PRVT->used = 1;
-	if (CTB_EXPECT1(state->state == 5)) {
 L_DECODE:
-		if (CTB_EXPECT1((r = decodeblck(state)) != 0)) {
+	if (CTB_EXPECT1(state->state == 5)) {
+		if (CTB_EXPECT1((r = decodeblock(state)) != 0)) {
 			if (state->finalinput && r == INFLT_SRCEXHSTD) {
 				SETERROR(INFLT_EINPUTEND);
 				return INFLT_ERROR;
@@ -698,8 +728,9 @@ L_DECODE:
 				}
 
 				if (tryreadbits(state, 3)) {
-					PRVT->final  = getbits(state, 1); dropbits(state, 1);
-					state->state = getbits(state, 2); dropbits(state, 2);
+					PRVT->final  = readbits(state, 1); dropbits(state, 1);
+					state->state = readbits(state, 2); dropbits(state, 2);
+
 					state->state++;
 					continue;
 				}
@@ -708,9 +739,7 @@ L_DECODE:
 					SETERROR(INFLT_EINPUTEND);
 					return INFLT_ERROR;
 				}
-				if (updatewindow(state)) {
-					return INFLT_ERROR;
-				}
+				updatewindow(state);
 
 				return INFLT_SRCEXHSTD;
 			}
@@ -730,8 +759,7 @@ L_DECODE:
 
 			/* static */
 			case 2: {
-				PRVT->ltable = (void*) lsttctable;
-				PRVT->dtable = (void*) dsttctable;
+				setstatictables(state);
 
 				state->state = 5;
 				goto L_DECODE;
@@ -746,6 +774,7 @@ L_DECODE:
 					}
 					return r;
 				}
+
 				state->state = 5;
 				goto L_DECODE;
 			}
@@ -782,9 +811,9 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 		size = WNDWSIZE;
 	}
 
-	ctb_memcpy(PRVT->window, dict, size);
-	PRVT->count = size;
-	PRVT->end   = size;
+	ctb_memcpy(PRVT->wndnbuffer, dict, size);
+	PRVT->wndnend   = size;
+	PRVT->wndncnt = size;
 
 	PRVT->used = 1;
 }
@@ -811,9 +840,7 @@ decodestrd(struct TInflator* state)
 		dropbits(state, PRVT->bcount & 7);
 	}
 	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
-		}
+		updatewindow(state);
 		return INFLT_SRCEXHSTD;
 	}
 
@@ -824,14 +851,12 @@ L_STATE1:
 		uint8 a;
 		uint8 b;
 
-		a = (uint8) getbits(state, 8); dropbits(state, 8);
-		b = (uint8) getbits(state, 8); dropbits(state, 8);
+		a = (uint8) readbits(state, 8); dropbits(state, 8);
+		b = (uint8) readbits(state, 8); dropbits(state, 8);
 		slength = a | (b << 8);
 	}
 	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
-		}
+		updatewindow(state);
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
@@ -842,8 +867,8 @@ L_STATE2:
 		uint8 a;
 		uint8 b;
 
-		a = (uint8) getbits(state, 8); dropbits(state, 8);
-		b = (uint8) getbits(state, 8); dropbits(state, 8);
+		a = (uint8) readbits(state, 8); dropbits(state, 8);
+		b = (uint8) readbits(state, 8); dropbits(state, 8);
 		nlength = a | (b << 8);
 
 		if ((uint16) ~slength != nlength) {
@@ -852,9 +877,7 @@ L_STATE2:
 		}
 	}
 	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
-		}
+		updatewindow(state);
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
@@ -876,9 +899,7 @@ L_STATE3:
 	slength -= maxrun;
 	if (slength) {
 		if (PRVT->final == 0) {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
+			updatewindow(state);
 		}
 		if ((targetleft - maxrun) == 0) {
 			return INFLT_TGTEXHSTD;
@@ -902,7 +923,7 @@ L_STATE3:
 CTB_INLINE uintxx
 readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 {
-	struct TINFLTTEntry e;
+	uint32 e;
 	uintxx length;
 	uintxx replen;
 
@@ -913,40 +934,40 @@ readlengths(struct TInflator* state, uintxx n, uint16* lengths)
 	};
 
 	while (scindex < n) {
+		uint32 sl;
+		uint32 ln;
+
 		for (;;) {
-			e = PRVT->ltable[getbits(state, CROOTBITS)];
-			if (e.length <= PRVT->bcount) {
+			e = PRVT->ltable[readbits(state, CROOTBITS)];
+			if ((uint8) e <= PRVT->bcount) {
 				break;
 			}
 
-			if(fetchbyte(state) == 0) {
-				if (updatewindow(state)) {
-					return INFLT_ERROR;
-				}
+			if (fetchbyte(state) == 0) {
+				updatewindow(state);
 				return INFLT_SRCEXHSTD;
 			}
 		}
 
-		if (e.info < 16) {
-			lengths[scindex++] = e.info;
-			dropbits(state, e.length);
+		sl = e >> 0x10;
+		if (sl < 16) {
+			lengths[scindex++] = sl;
+			dropbits(state, (uint8) e);
 			continue;
 		}
 
-		replen = sinfo[e.info - 16][1];
-		length = sinfo[e.info - 16][0];
+		replen = sinfo[sl - 16][1];
+		length = sinfo[sl - 16][0];
 
-		if (tryreadbits(state, e.length + length)) {
-			dropbits(state, e.length);
+		ln = (uint8) e;
+		if (tryreadbits(state, ln + length)) {
+			dropbits(state, ln);
 
-			replen += getbits(state, length);
+			replen += readbits(state, length);
 			dropbits(state, length);
 		}
 		else {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
-
+			updatewindow(state);
 			return INFLT_SRCEXHSTD;
 		}
 
@@ -993,9 +1014,9 @@ decodednmc(struct TInflator* state)
 	PRVT->dtable = PRVT->tables->symbols + ENOUGHL;
 
 	if (tryreadbits(state, 14)) {
-		slcount = getbits(state, 5) + 257; dropbits(state, 5);
-		sdcount = getbits(state, 5) +   1; dropbits(state, 5);
-		sccount = getbits(state, 4) +   4; dropbits(state, 4);
+		slcount = readbits(state, 5) + 257; dropbits(state, 5);
+		sdcount = readbits(state, 5) +   1; dropbits(state, 5);
+		sccount = readbits(state, 4) +   4; dropbits(state, 4);
 
 		if (slcount > 286 || sdcount > 30) {
 			SETERROR(INFLT_EBADTREE);
@@ -1003,10 +1024,7 @@ decodednmc(struct TInflator* state)
 		}
 	}
 	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
-		}
-
+		updatewindow(state);
 		return INFLT_SRCEXHSTD;
 	}
 	PRVT->substate++;
@@ -1016,14 +1034,11 @@ L_STATE1:
 	lengths = PRVT->tables->lengths;
 	for (; sccount > scindex; scindex++) {
 		if (tryreadbits(state, 3)) {
-			lengths[lcorder[scindex]] = (uint16) getbits(state, 3);
+			lengths[lcorder[scindex]] = (uint16) readbits(state, 3);
 			dropbits(state, 3);
 		}
 		else {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
-
+			updatewindow(state);
 			return INFLT_SRCEXHSTD;
 		}
 	}
@@ -1078,20 +1093,23 @@ L_STATE2:
 #define sbextra   PRVT->aux1
 #define sdistance PRVT->aux2
 
-CTB_INLINE uintxx
+static uintxx
 copybytes(struct TInflator* state, uintxx distance, uintxx length)
 {
 	uint8* buffer;
+	uint8* target;
 	uintxx maxrun;
-	uintxx avaible;
+	uintxx total;
+	uintxx rmnng;
 
-	avaible = (uintxx) (state->tend - state->target);
+	target = state->target;
+
+	rmnng = (uintxx) (state->tend -      target);
+	total = (uintxx) (target      - state->tbgn);
 	do {
-		if (avaible == 0) {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
-
+		if (CTB_EXPECT0(rmnng == 0)) {
+			state->target = target;
+			updatewindow(state);
 			slength   = length;
 			sdistance = distance;
 
@@ -1099,59 +1117,97 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			return INFLT_TGTEXHSTD;
 		}
 
-		maxrun = (uintxx) (state->target - state->tbgn);
-		if (distance > maxrun) {
-			uintxx offset;
-
-			maxrun = distance - maxrun;
-			if (CTB_EXPECT0(maxrun > PRVT->count)) {
+		if (distance > total) {
+			maxrun = distance - total;
+			if (CTB_EXPECT0(maxrun > PRVT->wndncnt)) {
 				SETERROR(INFLT_EFAROFFSET);
 				return INFLT_ERROR;
 			}
 
-			buffer = PRVT->window;
-			if (maxrun > PRVT->end) {
-				maxrun -= PRVT->end;
-
-				offset =  WNDWSIZE - maxrun;
+			buffer = PRVT->wndnbuffer;
+			if (maxrun > PRVT->wndnend) {
+				maxrun -= PRVT->wndnend;
+				buffer += WNDWSIZE - maxrun;
 			}
 			else {
-				offset = PRVT->end - maxrun;
+				buffer += PRVT->wndnend - maxrun;
 			}
-			buffer += offset;
 
 			if (maxrun > length)
 				maxrun = length;
 		}
 		else {
-			buffer = state->target - distance;
+			buffer = target - distance;
 			maxrun = length;
 		}
 
-		if (maxrun > avaible)
-			maxrun = avaible;
+		if (maxrun > rmnng)
+			maxrun = rmnng;
+		length -= maxrun;
 
-		length  -= maxrun;
-		avaible -= maxrun;
+		total += maxrun;
+		rmnng -= maxrun;
+
+		for (;maxrun > 16; maxrun -= 16) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+			((uint32*) target)[0] = ((uint32*) buffer)[0];
+			((uint32*) target)[1] = ((uint32*) buffer)[1];
+			((uint32*) target)[2] = ((uint32*) buffer)[2];
+			((uint32*) target)[3] = ((uint32*) buffer)[3];
+			target += 16;
+			buffer += 16;
+#else
+			target[0] = buffer[0];
+			target[1] = buffer[1];
+			target[2] = buffer[2];
+			target[3] = buffer[3];
+			target[4] = buffer[4];
+			target[5] = buffer[5];
+			target[6] = buffer[6];
+			target[7] = buffer[7];
+			target += 8;
+			buffer += 8;
+
+			target[0] = buffer[0];
+			target[1] = buffer[1];
+			target[2] = buffer[2];
+			target[3] = buffer[3];
+			target[4] = buffer[4];
+			target[5] = buffer[5];
+			target[6] = buffer[6];
+			target[7] = buffer[7];
+			target += 8;
+			buffer += 8;
+#endif
+		}
+
+		for (;maxrun > 8; maxrun -= 8) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+			((uint32*) target)[0] = ((uint32*) buffer)[0];
+			((uint32*) target)[1] = ((uint32*) buffer)[1];
+#else
+			target[0] = buffer[0];
+			target[1] = buffer[1];
+			target[2] = buffer[2];
+			target[3] = buffer[3];
+
+			target[4] = buffer[4];
+			target[5] = buffer[5];
+			target[6] = buffer[6];
+			target[7] = buffer[7];
+#endif
+			target += 8;
+			buffer += 8;
+		}
 
 		do {
-			*state->target++ = *buffer++;
+			*target++ = *buffer++;
 		} while (--maxrun);
 	} while (length);
 
+	state->target = target;
 	return 0;
 }
-
-
-#if defined(CTB_ENV64)
-	#define FASTSRCLEFT 14
-	#define FASTTGTLEFT 274
-#else
-	#define FASTSRCLEFT 10
-	#define FASTTGTLEFT 266
-#endif
-
-static uintxx decodefast(struct TInflator* state);
 
 
 #if defined(__MSVC__)
@@ -1159,19 +1215,71 @@ static uintxx decodefast(struct TInflator* state);
 	#pragma warning(disable: 4702)
 #endif
 
+
+#define MASKBITS(BB, N) ((BB) & ((1ul << (N)) - 1))
+
+#if defined(CTB_ENV64)
+	#define BBMASK 0x00ffffffffffffffull
+#else
+	#define BBMASK 0x00fffffful
+#endif
+
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+	#if defined(CTB_ENV64)
+		#define LOADWORD(S) ((CTB_SWAP64ONBE(((bitbuffer*) (S))[0]) & BBMASK))
+	#else
+		#define LOADWORD(S) ((CTB_SWAP32ONBE(((bitbuffer*) (S))[0]) & BBMASK))
+	#endif
+#else
+	#if defined(CTB_ENV64)
+		#define LOADWORD(S) \
+			((((bitbuffer) (S)[0]) << 0x00) | \
+			 (((bitbuffer) (S)[1]) << 0x08) | \
+			 (((bitbuffer) (S)[2]) << 0x10) | \
+			 (((bitbuffer) (S)[3]) << 0x18) | \
+			 (((bitbuffer) (S)[4]) << 0x20) | (((bitbuffer) (S)[5]) << 0x28))
+	#else
+		#define LOADWORD(S) \
+			((((bitbuffer) (S)[0]) << 0x00) | (((bitbuffer) (S)[1]) << 0x08))
+	#endif
+#endif
+
+#define DROPBITS(BB, BC, N) (((BB) = (BB) >> (N)), ((BC) -= (N)))
+
+
+#if defined(CTB_ENV64)
+	#define FASTSRCLEFT 15
+	#define FASTTGTLEFT (258 + 8)
+#else
+	#define FASTSRCLEFT 10
+	#define FASTTGTLEFT 266
+#endif
+
+
+static uintxx decodefast(struct TInflator* state);
+
 static uintxx
-decodeblck(struct TInflator* state)
+decodeblock(struct TInflator* state)
 {
 	uintxx r;
 	uintxx length;
 	uintxx distance;
 	uintxx bextra;
 	uintxx fastcheck;
-	struct TINFLTTEntry e;
+	bitbuffer bb;
+	uintxx bc;
+	uint32 e;
+	uint32* ltable;
+	uint32* dtable;
 
 	length   = slength;
 	bextra   = sbextra;
 	distance = sdistance;
+
+	bb = PRVT->bbuffer;
+	bc = PRVT->bcount;
+	ltable = PRVT->ltable;
+	dtable = PRVT->dtable;
 
 	fastcheck = 1;
 	switch (PRVT->substate) {
@@ -1184,6 +1292,7 @@ decodeblck(struct TInflator* state)
 	}
 
 L_LOOP:
+	PRVT->substate = 0;
 	if (CTB_EXPECT0(fastcheck)) {
 		uintxx targetleft;
 		uintxx sourceleft;
@@ -1191,8 +1300,12 @@ L_LOOP:
 		targetleft = state->tend - state->target;
 		sourceleft = state->send - state->source;
 		if (targetleft >= FASTTGTLEFT && sourceleft >= FASTSRCLEFT) {
+			PRVT->bbuffer = bb;
+			PRVT->bcount  = bc;
+			
 			r = decodefast(state);
-			if (r == ENDOFBLOCK) {
+			if (r == 256) {
+				/* end of block */
 				PRVT->substate = 0;
 				return 0;
 			}
@@ -1201,183 +1314,195 @@ L_LOOP:
 					return INFLT_ERROR;
 				}
 			}
+			bb = PRVT->bbuffer;
+			bc = PRVT->bcount;
 		}
 		fastcheck = 0;
 	}
 
-	for (;;) {
-		e = PRVT->ltable[getbits(state, LROOTBITS)];
-		if (CTB_EXPECT1(e.length <= PRVT->bcount)) {
+	for (; 15 > bc; bc += 8) {
+		if (state->source >= state->send) {
 			break;
 		}
-
-		if (CTB_EXPECT0(fetchbyte(state) == 0)) {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
-
-			PRVT->substate = 0;
-			return INFLT_SRCEXHSTD;
-		}
+		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	if (CTB_EXPECT1(e.etag == SUBTABLEENTRY)) {
-		uintxx base;
-		uintxx bits;
+	if (bc >= 15) {
+		e = ltable[MASKBITS(bb, LROOTBITS)];
+		if (e & TAG_SUB) {
+			uintxx base;
 
-		base = e.info;
-		bits = e.length;
+			base = e >> 0x10;
+			e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
+		}
+	}
+	else {
 		for (;;) {
-			e = PRVT->ltable[base + (getbits(state, bits) >> LROOTBITS)];
-			if (CTB_EXPECT1(e.length <= PRVT->bcount)) {
+			e = ltable[MASKBITS(bb, LROOTBITS)];
+			if ((uint8) e <= bc) {
 				break;
 			}
 
-			if (CTB_EXPECT0(fetchbyte(state) == 0)) {
-				if (updatewindow(state)) {
-					return INFLT_ERROR;
+			if (state->source >= state->send) {
+				goto L_SRCEXHSTD;
+			}
+			bb |= ((bitbuffer) *state->source++) << bc;
+			bc += 8;
+		}
+
+		if (e & TAG_SUB) {
+			uintxx base;
+
+			base = e >> 0x10;
+			for (;;) {
+				e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
+				if ((uint8) e <= bc) {
+					break;
 				}
 
-				PRVT->substate = 0;
-				return INFLT_SRCEXHSTD;
+				if (state->source >= state->send) {
+					goto L_SRCEXHSTD;
+				}
+				bb |= ((bitbuffer) *state->source++) << bc;
+				bc += 8;
 			}
 		}
 	}
 
-	if (CTB_EXPECT1(e.etag == LITERALSYMBOL)) {
-		if (CTB_EXPECT1(state->tend > state->target)) {
-			*state->target++ = (uint8) e.info;
+	if (e & TAG_LIT) {
+		if (state->tend > state->target) {
+			*state->target++ = (uint8) (e >> 0x10);
 		}
 		else {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
+			updatewindow(state);
+			PRVT->bbuffer = bb;
+			PRVT->bcount  = bc;
 
-			PRVT->substate = 0;
 			return INFLT_TGTEXHSTD;
 		}
-		dropbits(state, e.length);
+		DROPBITS(bb, bc, (uint8) e);
 		goto L_LOOP;
 	}
+	else {
+		if (e & TAG_END) {
+			DROPBITS(bb, bc, (uint8) e);
 
-	if (CTB_EXPECT0(e.etag == ENDOFBLOCK)) {
-		dropbits(state, e.length);
-		PRVT->substate = 0;
-		return 0;
+			PRVT->bbuffer = bb;
+			PRVT->bcount  = bc;
+			return 0;
+		}
 	}
 
-	if (CTB_EXPECT0(e.etag == INVALIDCODE)) {
-		SETERROR(INFLT_EBADCODE);
-		return INFLT_ERROR;
-	}
+	DROPBITS(bb, bc, (uint8) e);
+	length = (e >> 0x10);
+	bextra = (e >> 0x08) & 0x0f;
 
-	dropbits(state, e.length);
-	length = e.info;
-	bextra = e.etag;
+	PRVT->substate++;
 
 L_STATE1:
-	if (CTB_EXPECT1(tryreadbits(state, bextra))) {
-		length += getbits(state, bextra);
-		dropbits(state, bextra);
-	}
-	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
+	for (; bextra > bc; bc += 8) {
+		if (state->source >= state->send) {
+			goto L_SRCEXHSTD;
 		}
-
-		PRVT->substate = 1;
-		slength   = length;
-		sbextra   = bextra;
-		sdistance = distance;
-
-		return INFLT_SRCEXHSTD;
+		bb |= ((bitbuffer) *state->source++) << bc;
 	}
+
+	length += MASKBITS(bb, bextra);
+	DROPBITS(bb, bc, bextra);
+
+	PRVT->substate++;
 
 L_STATE2:
 	/* decode distance */
-	for (;;) {
-		e = PRVT->dtable[getbits(state, DROOTBITS)];
-		if (CTB_EXPECT1(e.length <= PRVT->bcount)) {
+	for (; 15 > bc; bc += 8) {
+		if (state->source >= state->send) {
 			break;
 		}
-
-		if (CTB_EXPECT0(fetchbyte(state) == 0)) {
-			if (updatewindow(state)) {
-				return INFLT_ERROR;
-			}
-
-			PRVT->substate = 2;
-			slength   = length;
-			sbextra   = bextra;
-			sdistance = distance;
-
-			return INFLT_SRCEXHSTD;
-		}
+		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	if (CTB_EXPECT1(e.etag == SUBTABLEENTRY)) {
-		uintxx base;
-		uintxx bits;
+	if (bc >= 15) {
+		e = dtable[MASKBITS(bb, DROOTBITS)];
+		if (CTB_EXPECT1(e & TAG_SUB)) {
+			uintxx base;
 
-		base = e.info;
-		bits = e.length;
+			base = e >> 0x10;
+			e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
+		}
+	}
+	else {
 		for (;;) {
-			e = PRVT->dtable[base + (getbits(state, bits) >> DROOTBITS)];
-			if (CTB_EXPECT1(e.length <= PRVT->bcount)) {
+			e = dtable[MASKBITS(bb, DROOTBITS)];
+			if ((uint8) e <= bc) {
 				break;
 			}
 
-			if(CTB_EXPECT0(fetchbyte(state) == 0)) {
-				if (updatewindow(state)) {
-					SETERROR(INFLT_EOOM);
-					return INFLT_ERROR;
+			if (state->source >= state->send) {
+				goto L_SRCEXHSTD;
+			}
+			bb |= ((bitbuffer) *state->source++) << bc;
+			bc += 8;
+		}
+
+		if (e & TAG_SUB) {
+			uintxx base;
+
+			base = e >> 0x10;
+			for (;;) {
+				e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
+				if ((uint8) e <= bc) {
+					break;
 				}
 
-				PRVT->substate = 2;
-				slength   = length;
-				sbextra   = bextra;
-				sdistance = distance;
-
-				return INFLT_SRCEXHSTD;
+				if (state->source >= state->send) {
+					goto L_SRCEXHSTD;
+				}
+				bb |= ((bitbuffer) *state->source++) << bc;
+				bc += 8;
 			}
 		}
 	}
 
-	if (CTB_EXPECT0(e.etag == INVALIDCODE)) {
+	if ((uint8) e == 0) {
 		SETERROR(INFLT_EBADCODE);
 		return INFLT_ERROR;
 	}
 
-	dropbits(state, e.length);
-	distance = e.info;
-	bextra   = e.etag;
+	DROPBITS(bb, bc, (uint8) e);
+	distance = (e >> 0x10);
+	bextra   = (e >> 0x08) & 0x0f;
+
+	PRVT->substate++;
 
 L_STATE3:
-	if (CTB_EXPECT1(tryreadbits(state, bextra))) {
-		distance += getbits(state, bextra);
-		dropbits(state, bextra);
-	}
-	else {
-		if (updatewindow(state)) {
-			return INFLT_ERROR;
+	for (; bextra > bc; bc += 8) {
+		if (state->source >= state->send) {
+			goto L_SRCEXHSTD;
 		}
-
-		PRVT->substate = 3;
-		slength   = length;
-		sbextra   = bextra;
-		sdistance = distance;
-
-		return INFLT_SRCEXHSTD;
+		bb |= ((bitbuffer) *state->source++) << bc;
 	}
+
+	distance += MASKBITS(bb, bextra);
+	DROPBITS(bb, bc, bextra);
 
 L_STATE4:
 	r = copybytes(state, distance, length);
-	if (CTB_EXPECT0(r)) {
+	if (r) {
+		PRVT->bbuffer = bb;
+		PRVT->bcount  = bc;
 		return r;
 	}
 	goto L_LOOP;
 
-	return 0;
+L_SRCEXHSTD:
+	updatewindow(state);
+	slength   = length;
+	sdistance = distance;
+	sbextra   = bextra;
+
+	PRVT->bbuffer = bb;
+	PRVT->bcount  = bc;
+	return INFLT_SRCEXHSTD;
 }
 
 #if defined(__MSVC__)
@@ -1385,245 +1510,304 @@ L_STATE4:
 #endif
 
 
-#define GETBITS(BUFFER, N) ((BBTYPE) (BUFFER) & ((((BBTYPE) 1UL) << (N)) - 1))
-
-#define DROPBITS(BUFFER, BCOUNT, N) (BUFFER) >>= (N); (BCOUNT) -= (N);
-
 #if defined(CTB_ENV64)
-	#define BBMASK 0x0000ffffffffffffULL
-	#define BBSWAP CTB_SWAP64ONBE
+	#define PLATFORMWORDSIZE 8
 #else
-	#define BBMASK 0x0000ffffUL
-	#define BBSWAP CTB_SWAP32ONBE
-#endif
-
-#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-	#define FILLBBUFFER() \
-		n = BBSWAP(((BBTYPE*) source)[0]) & BBMASK;
-#else
-	#if defined(CTB_ENV64)
-		#define FILLBBUFFER() \
-			n = (((BBTYPE) source[0]) << 0x00) | \
-			    (((BBTYPE) source[1]) << 0x08) | \
-			    (((BBTYPE) source[2]) << 0x10) | \
-			    (((BBTYPE) source[3]) << 0x18) | \
-			    (((BBTYPE) source[4]) << 0x20) | \
-			    (((BBTYPE) source[5]) << 0x28);
-	#else
-		#define FILLBBUFFER() \
-			n = (((BBTYPE) source[0]) << 0x00) | \
-			    (((BBTYPE) source[1]) << 0x08);
-	#endif
+	#define PLATFORMWORDSIZE 4
 #endif
 
 
 static uintxx
 decodefast(struct TInflator* state)
 {
+	uintxx r;
 	uint8* source;
 	uint8* target;
-	uint8* send;
 	uint8* tend;
-	uintxx bb;
+	uint8* send;
+	uint64 bb;
 	uintxx bc;
-	uintxx r;
-	uintxx length;
-	uintxx distance;
-	uintxx targetsz;
-	uintxx maxrun;
-	uint8* buffer;
-	BBTYPE n;
-	struct TINFLTTEntry e;
+	uintxx n;
+	uint32* ltable;
+	uint32* dtable;
+	uint32 e;
 
 	source = state->source;
 	target = state->target;
-	send   = state->send;
-	tend   = state->tend;
+	tend = state->tend - FASTTGTLEFT;
+	send = state->send - FASTSRCLEFT;
 
+	ltable = PRVT->ltable;
+	dtable = PRVT->dtable;
 	bb = PRVT->bbuffer;
 	bc = PRVT->bcount;
+
 	r = 0;
+	do {
+		bb |= LOADWORD(source) << bc;
+		source = (source + 7) - ((bc >> 3) & 0x07);
+		bc |= 56;
 
-L_LOOP:
-	if (tend - target < FASTTGTLEFT || send - source < FASTSRCLEFT)
-		goto L_DONE;
+		/* decode literal or length */
+		e = ltable[MASKBITS(bb, LROOTBITS)];
+		if (CTB_EXPECT1(e & TAG_LIT)) {
+			*target++ = (uint8) (e >> 0x10);
+			DROPBITS(bb, bc, (uint8) e);
 
-	if (CTB_EXPECT1(bc < 15)) {
-		FILLBBUFFER();
+			e = ltable[MASKBITS(bb, LROOTBITS)];
+			if (CTB_EXPECT1(e & TAG_LIT)) {
+				*target++ = (uint8) (e >> 0x10);
+				DROPBITS(bb, bc, (uint8) e);
 
-		bb |= n << bc;
-		bc +=     (sizeof(BBTYPE) - 2) << 3;
-		source += (sizeof(BBTYPE) - 2);
-	}
-
-	/* decode literal or length */
-	e = PRVT->ltable[GETBITS(bb, LROOTBITS)];
-	if (CTB_EXPECT1(e.etag == SUBTABLEENTRY)) {
-		e = PRVT->ltable[e.info + (GETBITS(bb, e.length) >> LROOTBITS)];
-	}
-	DROPBITS(bb, bc, e.length);
-
-	if (CTB_EXPECT1(e.etag == LITERALSYMBOL)) {
-		*target++ = (uint8) e.info;
-		goto L_LOOP;
-	}
-
-	if (CTB_EXPECT0(e.etag == ENDOFBLOCK)) {
-		r = ENDOFBLOCK;
-		goto L_DONE;
-	}
-
-	if (CTB_EXPECT0(e.etag == INVALIDCODE)) {
-		SETERROR(INFLT_EBADCODE);
-		return INFLT_ERROR;
-	}
-
-	/* length */
-	if (CTB_EXPECT0(e.etag > bc)) {
-		FILLBBUFFER();
-
-		bb |= n << bc;
-		bc +=     (sizeof(BBTYPE) - 2) << 3;
-		source += (sizeof(BBTYPE) - 2);
-	}
-
-	length = e.info + GETBITS(bb, e.etag);
-	DROPBITS(bb, bc, e.etag);
-
-	if (CTB_EXPECT0(bc < 15)) {
-		FILLBBUFFER();
-
-		bb |= n << bc;
-		bc +=     (sizeof(BBTYPE) - 2) << 3;
-		source += (sizeof(BBTYPE) - 2);
-	}
-
-	/* decode distance */
-	e = PRVT->dtable[GETBITS(bb, DROOTBITS)];
-	if (CTB_EXPECT1(e.etag == SUBTABLEENTRY)) {
-		e = PRVT->dtable[e.info + (GETBITS(bb, e.length) >> DROOTBITS)];
-	}
-	DROPBITS(bb, bc, e.length);
-
-	if (CTB_EXPECT0(e.etag == INVALIDCODE)) {
-		SETERROR(INFLT_EBADCODE);
-		return INFLT_ERROR;
-	}
-
-	if (CTB_EXPECT0(e.etag > bc)) {
-		FILLBBUFFER();
-
-		bb |= n << bc;
-		bc +=     (sizeof(BBTYPE) - 2) << 3;
-		source += (sizeof(BBTYPE) - 2);
-	}
-
-	distance = e.info + GETBITS(bb, e.etag);
-	DROPBITS(bb, bc, e.etag);
-
-	targetsz = (uintxx) (target - state->tbgn);
-	if (CTB_EXPECT1(distance < targetsz)) {
-		uint8* end;
-
-		buffer = target - distance;
-		maxrun = length;
-		end = target + maxrun;
-
-		if (distance >= sizeof(BBTYPE)) {
-#if defined(CTB_FASTUNALIGNED)
-			((uint32*) target)[0] = ((uint32*) buffer)[0];
-#if defined(CTB_ENV64)
-			((uint32*) target)[1] = ((uint32*) buffer)[1];
-#endif
-#else
-			target[0] = buffer[0];
-			target[1] = buffer[1];
-			target[2] = buffer[2];
-			target[3] = buffer[3];
-#if defined(CTB_ENV64)
-			target[4] = buffer[4];
-			target[5] = buffer[5];
-			target[6] = buffer[6];
-			target[7] = buffer[7];
-#endif
-#endif
-			target += sizeof(BBTYPE);
-			buffer += sizeof(BBTYPE);
-			do {
-#if defined(CTB_FASTUNALIGNED)
-				((uint32*) target)[0] = ((uint32*) buffer)[0];
-#if defined(CTB_ENV64)
-				((uint32*) target)[1] = ((uint32*) buffer)[1];
-#endif
-#else
-				target[0] = buffer[0];
-				target[1] = buffer[1];
-				target[2] = buffer[2];
-				target[3] = buffer[3];
-#if defined(CTB_ENV64)
-				target[4] = buffer[4];
-				target[5] = buffer[5];
-				target[6] = buffer[6];
-				target[7] = buffer[7];
-#endif
-#endif
-				target += sizeof(BBTYPE);
-				buffer += sizeof(BBTYPE);
-			} while (target < end);
-			target = end;
-		}
-		else {
-			*target++ = *buffer++;
-			*target++ = *buffer++;
-			do {
-				*target++ = *buffer++;
-			} while (target < end);
-		}
-	}
-	else {
-		do {
-			maxrun = (uintxx) (target - state->tbgn);
-			if (distance > maxrun) {
-				uintxx offset;
-
-				maxrun = distance - maxrun;
-
-				if (CTB_EXPECT0(maxrun > PRVT->count)) {
-					SETERROR(INFLT_EFAROFFSET);
-					return INFLT_ERROR;
-				}
-
-				buffer = PRVT->window;
-				if (maxrun > PRVT->end) {
-					maxrun -= PRVT->end;
-
-					offset = WNDWSIZE  - maxrun;
-				}
-				else {
-					offset = PRVT->end - maxrun;
-				}
-				buffer += offset;
-
-				if (maxrun > length)
-					maxrun = length;
+				e = ltable[MASKBITS(bb, LROOTBITS)];
 			}
-			else {
+		}
+
+L_L1:
+		if (CTB_EXPECT1(e & TAG_LIT)) {
+			*target++ = (uint8) (e >> 0x10);
+
+			DROPBITS(bb, bc, (uint8) e);
+			continue;
+		}
+
+		if (CTB_EXPECT1((e & TAG_NON) == 0)) {
+			uintxx extra;
+			uintxx length;
+			uintxx distance;
+			uintxx targetbytes;
+			uintxx maxrun;
+			uint8* buffer;
+
+			/* length */
+			DROPBITS(bb, bc, (uint8) e);
+
+			extra  = (e >> 0x08) & 0x0f;
+			length = (e >> 0x10) + MASKBITS(bb, extra);
+			DROPBITS(bb, bc, extra);
+
+			/* distance */
+			e = dtable[MASKBITS(bb, DROOTBITS)];
+			if (CTB_EXPECT0(e & TAG_SUB)) {
+				uintxx base;
+
+				base = e >> 0x10;
+				e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
+			}
+
+			DROPBITS(bb, bc, (uint8) e);
+
+			if (bc < 13) {
+				bb |= LOADWORD(source) << bc;
+				source = (source + 7) - ((bc >> 3) & 0x07);
+				bc |= 56;
+			}
+
+			extra    = (e >> 0x08) & 0x0f;
+			distance = (e >> 0x10) + MASKBITS(bb, extra);
+			DROPBITS(bb, bc, extra);
+
+			targetbytes = (uintxx) (target - state->tbgn);
+			if (CTB_EXPECT0(distance < targetbytes)) {
+				uint8* end;
+
 				buffer = target - distance;
 				maxrun = length;
+				end = target + maxrun;
+
+				if (CTB_EXPECT1(distance >= PLATFORMWORDSIZE)) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+#if defined(CTB_ENV64)
+					((uint64*) target)[0] = ((uint64*) buffer)[0];
+					((uint64*) target)[1] = ((uint64*) buffer)[1];
+					target += 16;
+					buffer += 16;
+#else
+					((uint32*) target)[0] = ((uint32*) buffer)[0];
+					((uint32*) target)[1] = ((uint32*) buffer)[1];
+					target += 8;
+					buffer += 8;
+#endif
+#else
+					target[0] = buffer[0];
+					target[1] = buffer[1];
+					target[2] = buffer[2];
+					target[3] = buffer[3];
+					target += 4;
+					buffer += 4;
+#endif
+					do {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+#if defined(CTB_ENV64)
+						((uint64*) target)[0] = ((uint64*) buffer)[0];
+						((uint64*) target)[1] = ((uint64*) buffer)[1];
+						target += 16;
+						buffer += 16;
+#else
+						((uint32*) target)[0] = ((uint32*) buffer)[0];
+						((uint32*) target)[1] = ((uint32*) buffer)[1];
+						target += 8;
+						buffer += 8;
+#endif
+#else
+						target[0] = buffer[0];
+						target[1] = buffer[1];
+						target[2] = buffer[2];
+						target[3] = buffer[3];
+						target += 4;
+						buffer += 4;
+#endif
+					} while (target < end);
+					target = end;
+				}
+				else {
+					*target++ = *buffer++;
+					*target++ = *buffer++;
+					do {
+						*target++ = *buffer++;
+					} while (target < end);
+				}
 			}
+			else {
+				maxrun = targetbytes;
+				do {
+					if (CTB_EXPECT0(distance > maxrun)) {
+						maxrun = distance - maxrun;
+						if (CTB_EXPECT0(maxrun > PRVT->wndncnt)) {
+							SETERROR(INFLT_EFAROFFSET);
+							return INFLT_ERROR;
+						}
 
-			length -= maxrun;
-			do {
-				*target++ = *buffer++;
-			} while (--maxrun);
-		} while (length);
-	}
-	goto L_LOOP;
+						buffer = PRVT->wndnbuffer;
+						if (maxrun > PRVT->wndnend) {
+							maxrun -= PRVT->wndnend;
+							buffer += WNDWSIZE - maxrun;
+						}
+						else {
+							buffer += PRVT->wndnend - maxrun;
+						}
 
-L_DONE:
+						if (maxrun > length)
+							maxrun = length;
+					}
+					else {
+						buffer = target - distance;
+						maxrun = length;
+					}
+
+					length -= maxrun;
+					if (CTB_EXPECT1(maxrun >= PLATFORMWORDSIZE)) {
+						for (;maxrun > 16; maxrun -= 16) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+#if defined(CTB_ENV64)
+							((uint64*) target)[0] = ((uint64*) buffer)[0];
+							((uint64*) target)[1] = ((uint64*) buffer)[1];
+#else
+							((uint32*) target)[0] = ((uint32*) buffer)[0];
+							((uint32*) target)[1] = ((uint32*) buffer)[1];
+							((uint32*) target)[2] = ((uint32*) buffer)[2];
+							((uint32*) target)[3] = ((uint32*) buffer)[3];
+#endif
+							target += 16;
+							buffer += 16;
+#else
+							target[0] = buffer[0];
+							target[1] = buffer[1];
+							target[2] = buffer[2];
+							target[3] = buffer[3];
+							target[4] = buffer[4];
+							target[5] = buffer[5];
+							target[6] = buffer[6];
+							target[7] = buffer[7];
+							
+							target += 8;
+							buffer += 8;
+							target[0] = buffer[0];
+							target[1] = buffer[1];
+							target[2] = buffer[2];
+							target[3] = buffer[3];
+							target[4] = buffer[4];
+							target[5] = buffer[5];
+							target[6] = buffer[6];
+							target[7] = buffer[7];
+							target += 8;
+							buffer += 8;
+#endif
+						}
+
+						for (;maxrun > 8; maxrun -= 8) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+#if defined(CTB_ENV64)
+							((uint64*) target)[0] = ((uint64*) buffer)[0];
+#else
+							((uint32*) target)[0] = ((uint32*) buffer)[0];
+							((uint32*) target)[1] = ((uint32*) buffer)[1];
+#endif
+							target += 8;
+							buffer += 8;
+#else
+							target[0] = buffer[0];
+							target[1] = buffer[1];
+							target[2] = buffer[2];
+							target[3] = buffer[3];
+							target[4] = buffer[4];
+							target[5] = buffer[5];
+							target[6] = buffer[6];
+							target[7] = buffer[7];
+							target += 8;
+							buffer += 8;
+#endif
+						}
+
+						do {
+							*target++ = *buffer++;
+						} while (--maxrun);
+					}
+					else {
+						switch (maxrun) {
+#if defined(CTB_ENV64)
+							case 7: *target++ = *buffer++;  /* fallthrough */
+							case 6: *target++ = *buffer++;  /* fallthrough */
+							case 5: *target++ = *buffer++;  /* fallthrough */
+							case 4: *target++ = *buffer++;  /* fallthrough */
+							case 3: *target++ = *buffer++;  /* fallthrough */
+							case 2: *target++ = *buffer++;  /* fallthrough */
+							case 1: *target++ = *buffer++;  /* fallthrough */
+#else
+							case 3: *target++ = *buffer++;  /* fallthrough */
+							case 2: *target++ = *buffer++;  /* fallthrough */
+							case 1: *target++ = *buffer++;  /* fallthrough */
+#endif
+						}
+					}
+					maxrun = (uintxx) (target - state->tbgn);
+				} while (length);
+			}
+		}
+		else {
+			if (CTB_EXPECT1(e & TAG_SUB)) {
+				uintxx base;
+
+				base = e >> 0x10;
+				e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
+				goto L_L1;
+			}
+			else {
+				if (CTB_EXPECT0(e & TAG_END)) {
+					r = 256;
+					DROPBITS(bb, bc, (uint8) e);
+					break;
+				}
+
+				SETERROR(INFLT_EBADCODE);
+				return INFLT_ERROR;
+			}
+		}
+	} while (tend > target && send > source);
+
 	/* restore unused bytes */
-	n = bc & 7;
-	PRVT->bbuffer = bb & ((((uintxx) 1) << n) - 1);
+	n = bc & 0x07;
+	PRVT->bbuffer = bb & ((((bitbuffer) 1ul) << n) - 1);
 	PRVT->bcount  = n;
 
 	state->source = source - ((bc - n) >> 3);
@@ -1631,239 +1815,346 @@ L_DONE:
 	return r;
 }
 
-
 #undef slength
 #undef sbextra
 #undef sdistance
 
-#undef PRVT
-
 #else
+
 
 /* ****************************************************************************
  * Static Tables
  *************************************************************************** */
 
-static const struct TINFLTTEntry lsttctable[1L << LROOTBITS] = {
-	{0x0100, 0x11, 0x07}, {0x0050, 0x10, 0x08}, {0x0010, 0x10, 0x08},
-	{0x0073, 0x04, 0x08}, {0x001f, 0x02, 0x07}, {0x0070, 0x10, 0x08},
-	{0x0030, 0x10, 0x08}, {0x00c0, 0x10, 0x09}, {0x000a, 0x00, 0x07},
-	{0x0060, 0x10, 0x08}, {0x0020, 0x10, 0x08}, {0x00a0, 0x10, 0x09},
-	{0x0000, 0x10, 0x08}, {0x0080, 0x10, 0x08}, {0x0040, 0x10, 0x08},
-	{0x00e0, 0x10, 0x09}, {0x0006, 0x00, 0x07}, {0x0058, 0x10, 0x08},
-	{0x0018, 0x10, 0x08}, {0x0090, 0x10, 0x09}, {0x003b, 0x03, 0x07},
-	{0x0078, 0x10, 0x08}, {0x0038, 0x10, 0x08}, {0x00d0, 0x10, 0x09},
-	{0x0011, 0x01, 0x07}, {0x0068, 0x10, 0x08}, {0x0028, 0x10, 0x08},
-	{0x00b0, 0x10, 0x09}, {0x0008, 0x10, 0x08}, {0x0088, 0x10, 0x08},
-	{0x0048, 0x10, 0x08}, {0x00f0, 0x10, 0x09}, {0x0004, 0x00, 0x07},
-	{0x0054, 0x10, 0x08}, {0x0014, 0x10, 0x08}, {0x00e3, 0x05, 0x08},
-	{0x002b, 0x03, 0x07}, {0x0074, 0x10, 0x08}, {0x0034, 0x10, 0x08},
-	{0x00c8, 0x10, 0x09}, {0x000d, 0x01, 0x07}, {0x0064, 0x10, 0x08},
-	{0x0024, 0x10, 0x08}, {0x00a8, 0x10, 0x09}, {0x0004, 0x10, 0x08},
-	{0x0084, 0x10, 0x08}, {0x0044, 0x10, 0x08}, {0x00e8, 0x10, 0x09},
-	{0x0008, 0x00, 0x07}, {0x005c, 0x10, 0x08}, {0x001c, 0x10, 0x08},
-	{0x0098, 0x10, 0x09}, {0x0053, 0x04, 0x07}, {0x007c, 0x10, 0x08},
-	{0x003c, 0x10, 0x08}, {0x00d8, 0x10, 0x09}, {0x0017, 0x02, 0x07},
-	{0x006c, 0x10, 0x08}, {0x002c, 0x10, 0x08}, {0x00b8, 0x10, 0x09},
-	{0x000c, 0x10, 0x08}, {0x008c, 0x10, 0x08}, {0x004c, 0x10, 0x08},
-	{0x00f8, 0x10, 0x09}, {0x0003, 0x00, 0x07}, {0x0052, 0x10, 0x08},
-	{0x0012, 0x10, 0x08}, {0x00a3, 0x05, 0x08}, {0x0023, 0x03, 0x07},
-	{0x0072, 0x10, 0x08}, {0x0032, 0x10, 0x08}, {0x00c4, 0x10, 0x09},
-	{0x000b, 0x01, 0x07}, {0x0062, 0x10, 0x08}, {0x0022, 0x10, 0x08},
-	{0x00a4, 0x10, 0x09}, {0x0002, 0x10, 0x08}, {0x0082, 0x10, 0x08},
-	{0x0042, 0x10, 0x08}, {0x00e4, 0x10, 0x09}, {0x0007, 0x00, 0x07},
-	{0x005a, 0x10, 0x08}, {0x001a, 0x10, 0x08}, {0x0094, 0x10, 0x09},
-	{0x0043, 0x04, 0x07}, {0x007a, 0x10, 0x08}, {0x003a, 0x10, 0x08},
-	{0x00d4, 0x10, 0x09}, {0x0013, 0x02, 0x07}, {0x006a, 0x10, 0x08},
-	{0x002a, 0x10, 0x08}, {0x00b4, 0x10, 0x09}, {0x000a, 0x10, 0x08},
-	{0x008a, 0x10, 0x08}, {0x004a, 0x10, 0x08}, {0x00f4, 0x10, 0x09},
-	{0x0005, 0x00, 0x07}, {0x0056, 0x10, 0x08}, {0x0016, 0x10, 0x08},
-	{0x0000, 0x00, 0x08}, {0x0033, 0x03, 0x07}, {0x0076, 0x10, 0x08},
-	{0x0036, 0x10, 0x08}, {0x00cc, 0x10, 0x09}, {0x000f, 0x01, 0x07},
-	{0x0066, 0x10, 0x08}, {0x0026, 0x10, 0x08}, {0x00ac, 0x10, 0x09},
-	{0x0006, 0x10, 0x08}, {0x0086, 0x10, 0x08}, {0x0046, 0x10, 0x08},
-	{0x00ec, 0x10, 0x09}, {0x0009, 0x00, 0x07}, {0x005e, 0x10, 0x08},
-	{0x001e, 0x10, 0x08}, {0x009c, 0x10, 0x09}, {0x0063, 0x04, 0x07},
-	{0x007e, 0x10, 0x08}, {0x003e, 0x10, 0x08}, {0x00dc, 0x10, 0x09},
-	{0x001b, 0x02, 0x07}, {0x006e, 0x10, 0x08}, {0x002e, 0x10, 0x08},
-	{0x00bc, 0x10, 0x09}, {0x000e, 0x10, 0x08}, {0x008e, 0x10, 0x08},
-	{0x004e, 0x10, 0x08}, {0x00fc, 0x10, 0x09}, {0x0100, 0x11, 0x07},
-	{0x0051, 0x10, 0x08}, {0x0011, 0x10, 0x08}, {0x0083, 0x05, 0x08},
-	{0x001f, 0x02, 0x07}, {0x0071, 0x10, 0x08}, {0x0031, 0x10, 0x08},
-	{0x00c2, 0x10, 0x09}, {0x000a, 0x00, 0x07}, {0x0061, 0x10, 0x08},
-	{0x0021, 0x10, 0x08}, {0x00a2, 0x10, 0x09}, {0x0001, 0x10, 0x08},
-	{0x0081, 0x10, 0x08}, {0x0041, 0x10, 0x08}, {0x00e2, 0x10, 0x09},
-	{0x0006, 0x00, 0x07}, {0x0059, 0x10, 0x08}, {0x0019, 0x10, 0x08},
-	{0x0092, 0x10, 0x09}, {0x003b, 0x03, 0x07}, {0x0079, 0x10, 0x08},
-	{0x0039, 0x10, 0x08}, {0x00d2, 0x10, 0x09}, {0x0011, 0x01, 0x07},
-	{0x0069, 0x10, 0x08}, {0x0029, 0x10, 0x08}, {0x00b2, 0x10, 0x09},
-	{0x0009, 0x10, 0x08}, {0x0089, 0x10, 0x08}, {0x0049, 0x10, 0x08},
-	{0x00f2, 0x10, 0x09}, {0x0004, 0x00, 0x07}, {0x0055, 0x10, 0x08},
-	{0x0015, 0x10, 0x08}, {0x0102, 0x00, 0x08}, {0x002b, 0x03, 0x07},
-	{0x0075, 0x10, 0x08}, {0x0035, 0x10, 0x08}, {0x00ca, 0x10, 0x09},
-	{0x000d, 0x01, 0x07}, {0x0065, 0x10, 0x08}, {0x0025, 0x10, 0x08},
-	{0x00aa, 0x10, 0x09}, {0x0005, 0x10, 0x08}, {0x0085, 0x10, 0x08},
-	{0x0045, 0x10, 0x08}, {0x00ea, 0x10, 0x09}, {0x0008, 0x00, 0x07},
-	{0x005d, 0x10, 0x08}, {0x001d, 0x10, 0x08}, {0x009a, 0x10, 0x09},
-	{0x0053, 0x04, 0x07}, {0x007d, 0x10, 0x08}, {0x003d, 0x10, 0x08},
-	{0x00da, 0x10, 0x09}, {0x0017, 0x02, 0x07}, {0x006d, 0x10, 0x08},
-	{0x002d, 0x10, 0x08}, {0x00ba, 0x10, 0x09}, {0x000d, 0x10, 0x08},
-	{0x008d, 0x10, 0x08}, {0x004d, 0x10, 0x08}, {0x00fa, 0x10, 0x09},
-	{0x0003, 0x00, 0x07}, {0x0053, 0x10, 0x08}, {0x0013, 0x10, 0x08},
-	{0x00c3, 0x05, 0x08}, {0x0023, 0x03, 0x07}, {0x0073, 0x10, 0x08},
-	{0x0033, 0x10, 0x08}, {0x00c6, 0x10, 0x09}, {0x000b, 0x01, 0x07},
-	{0x0063, 0x10, 0x08}, {0x0023, 0x10, 0x08}, {0x00a6, 0x10, 0x09},
-	{0x0003, 0x10, 0x08}, {0x0083, 0x10, 0x08}, {0x0043, 0x10, 0x08},
-	{0x00e6, 0x10, 0x09}, {0x0007, 0x00, 0x07}, {0x005b, 0x10, 0x08},
-	{0x001b, 0x10, 0x08}, {0x0096, 0x10, 0x09}, {0x0043, 0x04, 0x07},
-	{0x007b, 0x10, 0x08}, {0x003b, 0x10, 0x08}, {0x00d6, 0x10, 0x09},
-	{0x0013, 0x02, 0x07}, {0x006b, 0x10, 0x08}, {0x002b, 0x10, 0x08},
-	{0x00b6, 0x10, 0x09}, {0x000b, 0x10, 0x08}, {0x008b, 0x10, 0x08},
-	{0x004b, 0x10, 0x08}, {0x00f6, 0x10, 0x09}, {0x0005, 0x00, 0x07},
-	{0x0057, 0x10, 0x08}, {0x0017, 0x10, 0x08}, {0x0000, 0x00, 0x08},
-	{0x0033, 0x03, 0x07}, {0x0077, 0x10, 0x08}, {0x0037, 0x10, 0x08},
-	{0x00ce, 0x10, 0x09}, {0x000f, 0x01, 0x07}, {0x0067, 0x10, 0x08},
-	{0x0027, 0x10, 0x08}, {0x00ae, 0x10, 0x09}, {0x0007, 0x10, 0x08},
-	{0x0087, 0x10, 0x08}, {0x0047, 0x10, 0x08}, {0x00ee, 0x10, 0x09},
-	{0x0009, 0x00, 0x07}, {0x005f, 0x10, 0x08}, {0x001f, 0x10, 0x08},
-	{0x009e, 0x10, 0x09}, {0x0063, 0x04, 0x07}, {0x007f, 0x10, 0x08},
-	{0x003f, 0x10, 0x08}, {0x00de, 0x10, 0x09}, {0x001b, 0x02, 0x07},
-	{0x006f, 0x10, 0x08}, {0x002f, 0x10, 0x08}, {0x00be, 0x10, 0x09},
-	{0x000f, 0x10, 0x08}, {0x008f, 0x10, 0x08}, {0x004f, 0x10, 0x08},
-	{0x00fe, 0x10, 0x09}, {0x0100, 0x11, 0x07}, {0x0050, 0x10, 0x08},
-	{0x0010, 0x10, 0x08}, {0x0073, 0x04, 0x08}, {0x001f, 0x02, 0x07},
-	{0x0070, 0x10, 0x08}, {0x0030, 0x10, 0x08}, {0x00c1, 0x10, 0x09},
-	{0x000a, 0x00, 0x07}, {0x0060, 0x10, 0x08}, {0x0020, 0x10, 0x08},
-	{0x00a1, 0x10, 0x09}, {0x0000, 0x10, 0x08}, {0x0080, 0x10, 0x08},
-	{0x0040, 0x10, 0x08}, {0x00e1, 0x10, 0x09}, {0x0006, 0x00, 0x07},
-	{0x0058, 0x10, 0x08}, {0x0018, 0x10, 0x08}, {0x0091, 0x10, 0x09},
-	{0x003b, 0x03, 0x07}, {0x0078, 0x10, 0x08}, {0x0038, 0x10, 0x08},
-	{0x00d1, 0x10, 0x09}, {0x0011, 0x01, 0x07}, {0x0068, 0x10, 0x08},
-	{0x0028, 0x10, 0x08}, {0x00b1, 0x10, 0x09}, {0x0008, 0x10, 0x08},
-	{0x0088, 0x10, 0x08}, {0x0048, 0x10, 0x08}, {0x00f1, 0x10, 0x09},
-	{0x0004, 0x00, 0x07}, {0x0054, 0x10, 0x08}, {0x0014, 0x10, 0x08},
-	{0x00e3, 0x05, 0x08}, {0x002b, 0x03, 0x07}, {0x0074, 0x10, 0x08},
-	{0x0034, 0x10, 0x08}, {0x00c9, 0x10, 0x09}, {0x000d, 0x01, 0x07},
-	{0x0064, 0x10, 0x08}, {0x0024, 0x10, 0x08}, {0x00a9, 0x10, 0x09},
-	{0x0004, 0x10, 0x08}, {0x0084, 0x10, 0x08}, {0x0044, 0x10, 0x08},
-	{0x00e9, 0x10, 0x09}, {0x0008, 0x00, 0x07}, {0x005c, 0x10, 0x08},
-	{0x001c, 0x10, 0x08}, {0x0099, 0x10, 0x09}, {0x0053, 0x04, 0x07},
-	{0x007c, 0x10, 0x08}, {0x003c, 0x10, 0x08}, {0x00d9, 0x10, 0x09},
-	{0x0017, 0x02, 0x07}, {0x006c, 0x10, 0x08}, {0x002c, 0x10, 0x08},
-	{0x00b9, 0x10, 0x09}, {0x000c, 0x10, 0x08}, {0x008c, 0x10, 0x08},
-	{0x004c, 0x10, 0x08}, {0x00f9, 0x10, 0x09}, {0x0003, 0x00, 0x07},
-	{0x0052, 0x10, 0x08}, {0x0012, 0x10, 0x08}, {0x00a3, 0x05, 0x08},
-	{0x0023, 0x03, 0x07}, {0x0072, 0x10, 0x08}, {0x0032, 0x10, 0x08},
-	{0x00c5, 0x10, 0x09}, {0x000b, 0x01, 0x07}, {0x0062, 0x10, 0x08},
-	{0x0022, 0x10, 0x08}, {0x00a5, 0x10, 0x09}, {0x0002, 0x10, 0x08},
-	{0x0082, 0x10, 0x08}, {0x0042, 0x10, 0x08}, {0x00e5, 0x10, 0x09},
-	{0x0007, 0x00, 0x07}, {0x005a, 0x10, 0x08}, {0x001a, 0x10, 0x08},
-	{0x0095, 0x10, 0x09}, {0x0043, 0x04, 0x07}, {0x007a, 0x10, 0x08},
-	{0x003a, 0x10, 0x08}, {0x00d5, 0x10, 0x09}, {0x0013, 0x02, 0x07},
-	{0x006a, 0x10, 0x08}, {0x002a, 0x10, 0x08}, {0x00b5, 0x10, 0x09},
-	{0x000a, 0x10, 0x08}, {0x008a, 0x10, 0x08}, {0x004a, 0x10, 0x08},
-	{0x00f5, 0x10, 0x09}, {0x0005, 0x00, 0x07}, {0x0056, 0x10, 0x08},
-	{0x0016, 0x10, 0x08}, {0x0000, 0x00, 0x08}, {0x0033, 0x03, 0x07},
-	{0x0076, 0x10, 0x08}, {0x0036, 0x10, 0x08}, {0x00cd, 0x10, 0x09},
-	{0x000f, 0x01, 0x07}, {0x0066, 0x10, 0x08}, {0x0026, 0x10, 0x08},
-	{0x00ad, 0x10, 0x09}, {0x0006, 0x10, 0x08}, {0x0086, 0x10, 0x08},
-	{0x0046, 0x10, 0x08}, {0x00ed, 0x10, 0x09}, {0x0009, 0x00, 0x07},
-	{0x005e, 0x10, 0x08}, {0x001e, 0x10, 0x08}, {0x009d, 0x10, 0x09},
-	{0x0063, 0x04, 0x07}, {0x007e, 0x10, 0x08}, {0x003e, 0x10, 0x08},
-	{0x00dd, 0x10, 0x09}, {0x001b, 0x02, 0x07}, {0x006e, 0x10, 0x08},
-	{0x002e, 0x10, 0x08}, {0x00bd, 0x10, 0x09}, {0x000e, 0x10, 0x08},
-	{0x008e, 0x10, 0x08}, {0x004e, 0x10, 0x08}, {0x00fd, 0x10, 0x09},
-	{0x0100, 0x11, 0x07}, {0x0051, 0x10, 0x08}, {0x0011, 0x10, 0x08},
-	{0x0083, 0x05, 0x08}, {0x001f, 0x02, 0x07}, {0x0071, 0x10, 0x08},
-	{0x0031, 0x10, 0x08}, {0x00c3, 0x10, 0x09}, {0x000a, 0x00, 0x07},
-	{0x0061, 0x10, 0x08}, {0x0021, 0x10, 0x08}, {0x00a3, 0x10, 0x09},
-	{0x0001, 0x10, 0x08}, {0x0081, 0x10, 0x08}, {0x0041, 0x10, 0x08},
-	{0x00e3, 0x10, 0x09}, {0x0006, 0x00, 0x07}, {0x0059, 0x10, 0x08},
-	{0x0019, 0x10, 0x08}, {0x0093, 0x10, 0x09}, {0x003b, 0x03, 0x07},
-	{0x0079, 0x10, 0x08}, {0x0039, 0x10, 0x08}, {0x00d3, 0x10, 0x09},
-	{0x0011, 0x01, 0x07}, {0x0069, 0x10, 0x08}, {0x0029, 0x10, 0x08},
-	{0x00b3, 0x10, 0x09}, {0x0009, 0x10, 0x08}, {0x0089, 0x10, 0x08},
-	{0x0049, 0x10, 0x08}, {0x00f3, 0x10, 0x09}, {0x0004, 0x00, 0x07},
-	{0x0055, 0x10, 0x08}, {0x0015, 0x10, 0x08}, {0x0102, 0x00, 0x08},
-	{0x002b, 0x03, 0x07}, {0x0075, 0x10, 0x08}, {0x0035, 0x10, 0x08},
-	{0x00cb, 0x10, 0x09}, {0x000d, 0x01, 0x07}, {0x0065, 0x10, 0x08},
-	{0x0025, 0x10, 0x08}, {0x00ab, 0x10, 0x09}, {0x0005, 0x10, 0x08},
-	{0x0085, 0x10, 0x08}, {0x0045, 0x10, 0x08}, {0x00eb, 0x10, 0x09},
-	{0x0008, 0x00, 0x07}, {0x005d, 0x10, 0x08}, {0x001d, 0x10, 0x08},
-	{0x009b, 0x10, 0x09}, {0x0053, 0x04, 0x07}, {0x007d, 0x10, 0x08},
-	{0x003d, 0x10, 0x08}, {0x00db, 0x10, 0x09}, {0x0017, 0x02, 0x07},
-	{0x006d, 0x10, 0x08}, {0x002d, 0x10, 0x08}, {0x00bb, 0x10, 0x09},
-	{0x000d, 0x10, 0x08}, {0x008d, 0x10, 0x08}, {0x004d, 0x10, 0x08},
-	{0x00fb, 0x10, 0x09}, {0x0003, 0x00, 0x07}, {0x0053, 0x10, 0x08},
-	{0x0013, 0x10, 0x08}, {0x00c3, 0x05, 0x08}, {0x0023, 0x03, 0x07},
-	{0x0073, 0x10, 0x08}, {0x0033, 0x10, 0x08}, {0x00c7, 0x10, 0x09},
-	{0x000b, 0x01, 0x07}, {0x0063, 0x10, 0x08}, {0x0023, 0x10, 0x08},
-	{0x00a7, 0x10, 0x09}, {0x0003, 0x10, 0x08}, {0x0083, 0x10, 0x08},
-	{0x0043, 0x10, 0x08}, {0x00e7, 0x10, 0x09}, {0x0007, 0x00, 0x07},
-	{0x005b, 0x10, 0x08}, {0x001b, 0x10, 0x08}, {0x0097, 0x10, 0x09},
-	{0x0043, 0x04, 0x07}, {0x007b, 0x10, 0x08}, {0x003b, 0x10, 0x08},
-	{0x00d7, 0x10, 0x09}, {0x0013, 0x02, 0x07}, {0x006b, 0x10, 0x08},
-	{0x002b, 0x10, 0x08}, {0x00b7, 0x10, 0x09}, {0x000b, 0x10, 0x08},
-	{0x008b, 0x10, 0x08}, {0x004b, 0x10, 0x08}, {0x00f7, 0x10, 0x09},
-	{0x0005, 0x00, 0x07}, {0x0057, 0x10, 0x08}, {0x0017, 0x10, 0x08},
-	{0x0000, 0x00, 0x08}, {0x0033, 0x03, 0x07}, {0x0077, 0x10, 0x08},
-	{0x0037, 0x10, 0x08}, {0x00cf, 0x10, 0x09}, {0x000f, 0x01, 0x07},
-	{0x0067, 0x10, 0x08}, {0x0027, 0x10, 0x08}, {0x00af, 0x10, 0x09},
-	{0x0007, 0x10, 0x08}, {0x0087, 0x10, 0x08}, {0x0047, 0x10, 0x08},
-	{0x00ef, 0x10, 0x09}, {0x0009, 0x00, 0x07}, {0x005f, 0x10, 0x08},
-	{0x001f, 0x10, 0x08}, {0x009f, 0x10, 0x09}, {0x0063, 0x04, 0x07},
-	{0x007f, 0x10, 0x08}, {0x003f, 0x10, 0x08}, {0x00df, 0x10, 0x09},
-	{0x001b, 0x02, 0x07}, {0x006f, 0x10, 0x08}, {0x002f, 0x10, 0x08},
-	{0x00bf, 0x10, 0x09}, {0x000f, 0x10, 0x08}, {0x008f, 0x10, 0x08},
-	{0x004f, 0x10, 0x08}, {0x00ff, 0x10, 0x09}
+#if LROOTBITS == 10 && DROOTBITS == 8
+
+static const uint32 lsttctable[] = {
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
+	0x001f0207, 0x80700008, 0x80300008, 0x80c00009, 
+	0x000a0007, 0x80600008, 0x80200008, 0x80a00009, 
+	0x80000008, 0x80800008, 0x80400008, 0x80e00009, 
+	0x00060007, 0x80580008, 0x80180008, 0x80900009, 
+	0x003b0307, 0x80780008, 0x80380008, 0x80d00009, 
+	0x00110107, 0x80680008, 0x80280008, 0x80b00009, 
+	0x80080008, 0x80880008, 0x80480008, 0x80f00009, 
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
+	0x002b0307, 0x80740008, 0x80340008, 0x80c80009, 
+	0x000d0107, 0x80640008, 0x80240008, 0x80a80009, 
+	0x80040008, 0x80840008, 0x80440008, 0x80e80009, 
+	0x00080007, 0x805c0008, 0x801c0008, 0x80980009, 
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009, 
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009, 
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009, 
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
+	0x00230307, 0x80720008, 0x80320008, 0x80c40009, 
+	0x000b0107, 0x80620008, 0x80220008, 0x80a40009, 
+	0x80020008, 0x80820008, 0x80420008, 0x80e40009, 
+	0x00070007, 0x805a0008, 0x801a0008, 0x80940009, 
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009, 
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009, 
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009, 
+	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
+	0x00330307, 0x80760008, 0x80360008, 0x80cc0009, 
+	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009, 
+	0x80060008, 0x80860008, 0x80460008, 0x80ec0009, 
+	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009, 
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009, 
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009, 
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009, 
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
+	0x001f0207, 0x80710008, 0x80310008, 0x80c20009, 
+	0x000a0007, 0x80610008, 0x80210008, 0x80a20009, 
+	0x80010008, 0x80810008, 0x80410008, 0x80e20009, 
+	0x00060007, 0x80590008, 0x80190008, 0x80920009, 
+	0x003b0307, 0x80790008, 0x80390008, 0x80d20009, 
+	0x00110107, 0x80690008, 0x80290008, 0x80b20009, 
+	0x80090008, 0x80890008, 0x80490008, 0x80f20009, 
+	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
+	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009, 
+	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009, 
+	0x80050008, 0x80850008, 0x80450008, 0x80ea0009, 
+	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009, 
+	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009, 
+	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009, 
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009, 
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
+	0x00230307, 0x80730008, 0x80330008, 0x80c60009, 
+	0x000b0107, 0x80630008, 0x80230008, 0x80a60009, 
+	0x80030008, 0x80830008, 0x80430008, 0x80e60009, 
+	0x00070007, 0x805b0008, 0x801b0008, 0x80960009, 
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009, 
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009, 
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009, 
+	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
+	0x00330307, 0x80770008, 0x80370008, 0x80ce0009, 
+	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009, 
+	0x80070008, 0x80870008, 0x80470008, 0x80ee0009, 
+	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009, 
+	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009, 
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009, 
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009, 
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
+	0x001f0207, 0x80700008, 0x80300008, 0x80c10009, 
+	0x000a0007, 0x80600008, 0x80200008, 0x80a10009, 
+	0x80000008, 0x80800008, 0x80400008, 0x80e10009, 
+	0x00060007, 0x80580008, 0x80180008, 0x80910009, 
+	0x003b0307, 0x80780008, 0x80380008, 0x80d10009, 
+	0x00110107, 0x80680008, 0x80280008, 0x80b10009, 
+	0x80080008, 0x80880008, 0x80480008, 0x80f10009, 
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
+	0x002b0307, 0x80740008, 0x80340008, 0x80c90009, 
+	0x000d0107, 0x80640008, 0x80240008, 0x80a90009, 
+	0x80040008, 0x80840008, 0x80440008, 0x80e90009, 
+	0x00080007, 0x805c0008, 0x801c0008, 0x80990009, 
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009, 
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009, 
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009, 
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
+	0x00230307, 0x80720008, 0x80320008, 0x80c50009, 
+	0x000b0107, 0x80620008, 0x80220008, 0x80a50009, 
+	0x80020008, 0x80820008, 0x80420008, 0x80e50009, 
+	0x00070007, 0x805a0008, 0x801a0008, 0x80950009, 
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009, 
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009, 
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009, 
+	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
+	0x00330307, 0x80760008, 0x80360008, 0x80cd0009, 
+	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009, 
+	0x80060008, 0x80860008, 0x80460008, 0x80ed0009, 
+	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009, 
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009, 
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009, 
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009, 
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
+	0x001f0207, 0x80710008, 0x80310008, 0x80c30009, 
+	0x000a0007, 0x80610008, 0x80210008, 0x80a30009, 
+	0x80010008, 0x80810008, 0x80410008, 0x80e30009, 
+	0x00060007, 0x80590008, 0x80190008, 0x80930009, 
+	0x003b0307, 0x80790008, 0x80390008, 0x80d30009, 
+	0x00110107, 0x80690008, 0x80290008, 0x80b30009, 
+	0x80090008, 0x80890008, 0x80490008, 0x80f30009, 
+	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
+	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009, 
+	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009, 
+	0x80050008, 0x80850008, 0x80450008, 0x80eb0009, 
+	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009, 
+	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009, 
+	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009, 
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009, 
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
+	0x00230307, 0x80730008, 0x80330008, 0x80c70009, 
+	0x000b0107, 0x80630008, 0x80230008, 0x80a70009, 
+	0x80030008, 0x80830008, 0x80430008, 0x80e70009, 
+	0x00070007, 0x805b0008, 0x801b0008, 0x80970009, 
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009, 
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009, 
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009, 
+	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
+	0x00330307, 0x80770008, 0x80370008, 0x80cf0009, 
+	0x000f0107, 0x80670008, 0x80270008, 0x80af0009, 
+	0x80070008, 0x80870008, 0x80470008, 0x80ef0009, 
+	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009, 
+	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009, 
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009, 
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009, 
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
+	0x001f0207, 0x80700008, 0x80300008, 0x80c00009, 
+	0x000a0007, 0x80600008, 0x80200008, 0x80a00009, 
+	0x80000008, 0x80800008, 0x80400008, 0x80e00009, 
+	0x00060007, 0x80580008, 0x80180008, 0x80900009, 
+	0x003b0307, 0x80780008, 0x80380008, 0x80d00009, 
+	0x00110107, 0x80680008, 0x80280008, 0x80b00009, 
+	0x80080008, 0x80880008, 0x80480008, 0x80f00009, 
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
+	0x002b0307, 0x80740008, 0x80340008, 0x80c80009, 
+	0x000d0107, 0x80640008, 0x80240008, 0x80a80009, 
+	0x80040008, 0x80840008, 0x80440008, 0x80e80009, 
+	0x00080007, 0x805c0008, 0x801c0008, 0x80980009, 
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009, 
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009, 
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009, 
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
+	0x00230307, 0x80720008, 0x80320008, 0x80c40009, 
+	0x000b0107, 0x80620008, 0x80220008, 0x80a40009, 
+	0x80020008, 0x80820008, 0x80420008, 0x80e40009, 
+	0x00070007, 0x805a0008, 0x801a0008, 0x80940009, 
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009, 
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009, 
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009, 
+	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
+	0x00330307, 0x80760008, 0x80360008, 0x80cc0009, 
+	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009, 
+	0x80060008, 0x80860008, 0x80460008, 0x80ec0009, 
+	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009, 
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009, 
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009, 
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009, 
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
+	0x001f0207, 0x80710008, 0x80310008, 0x80c20009, 
+	0x000a0007, 0x80610008, 0x80210008, 0x80a20009, 
+	0x80010008, 0x80810008, 0x80410008, 0x80e20009, 
+	0x00060007, 0x80590008, 0x80190008, 0x80920009, 
+	0x003b0307, 0x80790008, 0x80390008, 0x80d20009, 
+	0x00110107, 0x80690008, 0x80290008, 0x80b20009, 
+	0x80090008, 0x80890008, 0x80490008, 0x80f20009, 
+	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
+	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009, 
+	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009, 
+	0x80050008, 0x80850008, 0x80450008, 0x80ea0009, 
+	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009, 
+	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009, 
+	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009, 
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009, 
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
+	0x00230307, 0x80730008, 0x80330008, 0x80c60009, 
+	0x000b0107, 0x80630008, 0x80230008, 0x80a60009, 
+	0x80030008, 0x80830008, 0x80430008, 0x80e60009, 
+	0x00070007, 0x805b0008, 0x801b0008, 0x80960009, 
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009, 
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009, 
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009, 
+	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
+	0x00330307, 0x80770008, 0x80370008, 0x80ce0009, 
+	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009, 
+	0x80070008, 0x80870008, 0x80470008, 0x80ee0009, 
+	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009, 
+	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009, 
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009, 
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009, 
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
+	0x001f0207, 0x80700008, 0x80300008, 0x80c10009, 
+	0x000a0007, 0x80600008, 0x80200008, 0x80a10009, 
+	0x80000008, 0x80800008, 0x80400008, 0x80e10009, 
+	0x00060007, 0x80580008, 0x80180008, 0x80910009, 
+	0x003b0307, 0x80780008, 0x80380008, 0x80d10009, 
+	0x00110107, 0x80680008, 0x80280008, 0x80b10009, 
+	0x80080008, 0x80880008, 0x80480008, 0x80f10009, 
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
+	0x002b0307, 0x80740008, 0x80340008, 0x80c90009, 
+	0x000d0107, 0x80640008, 0x80240008, 0x80a90009, 
+	0x80040008, 0x80840008, 0x80440008, 0x80e90009, 
+	0x00080007, 0x805c0008, 0x801c0008, 0x80990009, 
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009, 
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009, 
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009, 
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
+	0x00230307, 0x80720008, 0x80320008, 0x80c50009, 
+	0x000b0107, 0x80620008, 0x80220008, 0x80a50009, 
+	0x80020008, 0x80820008, 0x80420008, 0x80e50009, 
+	0x00070007, 0x805a0008, 0x801a0008, 0x80950009, 
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009, 
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009, 
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009, 
+	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
+	0x00330307, 0x80760008, 0x80360008, 0x80cd0009, 
+	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009, 
+	0x80060008, 0x80860008, 0x80460008, 0x80ed0009, 
+	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009, 
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009, 
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009, 
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009, 
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
+	0x001f0207, 0x80710008, 0x80310008, 0x80c30009, 
+	0x000a0007, 0x80610008, 0x80210008, 0x80a30009, 
+	0x80010008, 0x80810008, 0x80410008, 0x80e30009, 
+	0x00060007, 0x80590008, 0x80190008, 0x80930009, 
+	0x003b0307, 0x80790008, 0x80390008, 0x80d30009, 
+	0x00110107, 0x80690008, 0x80290008, 0x80b30009, 
+	0x80090008, 0x80890008, 0x80490008, 0x80f30009, 
+	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
+	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009, 
+	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009, 
+	0x80050008, 0x80850008, 0x80450008, 0x80eb0009, 
+	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009, 
+	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009, 
+	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009, 
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009, 
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
+	0x00230307, 0x80730008, 0x80330008, 0x80c70009, 
+	0x000b0107, 0x80630008, 0x80230008, 0x80a70009, 
+	0x80030008, 0x80830008, 0x80430008, 0x80e70009, 
+	0x00070007, 0x805b0008, 0x801b0008, 0x80970009, 
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009, 
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009, 
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009, 
+	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
+	0x00330307, 0x80770008, 0x80370008, 0x80cf0009, 
+	0x000f0107, 0x80670008, 0x80270008, 0x80af0009, 
+	0x80070008, 0x80870008, 0x80470008, 0x80ef0009, 
+	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009, 
+	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009, 
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009, 
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009
 };
 
-static const struct TINFLTTEntry dsttctable[1L << DROOTBITS] = {
-	{0x0001, 0x00, 0x05}, {0x0101, 0x07, 0x05}, {0x0011, 0x03, 0x05},
-	{0x1001, 0x0b, 0x05}, {0x0005, 0x01, 0x05}, {0x0401, 0x09, 0x05},
-	{0x0041, 0x05, 0x05}, {0x4001, 0x0d, 0x05}, {0x0003, 0x00, 0x05},
-	{0x0201, 0x08, 0x05}, {0x0021, 0x04, 0x05}, {0x2001, 0x0c, 0x05},
-	{0x0009, 0x02, 0x05}, {0x0801, 0x0a, 0x05}, {0x0081, 0x06, 0x05},
-	{0x0000, 0x00, 0x05}, {0x0002, 0x00, 0x05}, {0x0181, 0x07, 0x05},
-	{0x0019, 0x03, 0x05}, {0x1801, 0x0b, 0x05}, {0x0007, 0x01, 0x05},
-	{0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05}, {0x6001, 0x0d, 0x05},
-	{0x0004, 0x00, 0x05}, {0x0301, 0x08, 0x05}, {0x0031, 0x04, 0x05},
-	{0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05}, {0x0c01, 0x0a, 0x05},
-	{0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05}, {0x0001, 0x00, 0x05},
-	{0x0101, 0x07, 0x05}, {0x0011, 0x03, 0x05}, {0x1001, 0x0b, 0x05},
-	{0x0005, 0x01, 0x05}, {0x0401, 0x09, 0x05}, {0x0041, 0x05, 0x05},
-	{0x4001, 0x0d, 0x05}, {0x0003, 0x00, 0x05}, {0x0201, 0x08, 0x05},
-	{0x0021, 0x04, 0x05}, {0x2001, 0x0c, 0x05}, {0x0009, 0x02, 0x05},
-	{0x0801, 0x0a, 0x05}, {0x0081, 0x06, 0x05}, {0x0000, 0x00, 0x05},
-	{0x0002, 0x00, 0x05}, {0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05},
-	{0x1801, 0x0b, 0x05}, {0x0007, 0x01, 0x05}, {0x0601, 0x09, 0x05},
-	{0x0061, 0x05, 0x05}, {0x6001, 0x0d, 0x05}, {0x0004, 0x00, 0x05},
-	{0x0301, 0x08, 0x05}, {0x0031, 0x04, 0x05}, {0x3001, 0x0c, 0x05},
-	{0x000d, 0x02, 0x05}, {0x0c01, 0x0a, 0x05}, {0x00c1, 0x06, 0x05},
-	{0x0000, 0x00, 0x05}, {0x0001, 0x00, 0x05}, {0x0101, 0x07, 0x05},
-	{0x0011, 0x03, 0x05}, {0x1001, 0x0b, 0x05}, {0x0005, 0x01, 0x05},
-	{0x0401, 0x09, 0x05}, {0x0041, 0x05, 0x05}, {0x4001, 0x0d, 0x05},
-	{0x0003, 0x00, 0x05}, {0x0201, 0x08, 0x05}, {0x0021, 0x04, 0x05},
-	{0x2001, 0x0c, 0x05}, {0x0009, 0x02, 0x05}, {0x0801, 0x0a, 0x05},
-	{0x0081, 0x06, 0x05}, {0x0000, 0x00, 0x05}, {0x0002, 0x00, 0x05},
-	{0x0181, 0x07, 0x05}, {0x0019, 0x03, 0x05}, {0x1801, 0x0b, 0x05},
-	{0x0007, 0x01, 0x05}, {0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05},
-	{0x6001, 0x0d, 0x05}, {0x0004, 0x00, 0x05}, {0x0301, 0x08, 0x05},
-	{0x0031, 0x04, 0x05}, {0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05},
-	{0x0c01, 0x0a, 0x05}, {0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05},
-	{0x0001, 0x00, 0x05}, {0x0101, 0x07, 0x05}, {0x0011, 0x03, 0x05},
-	{0x1001, 0x0b, 0x05}, {0x0005, 0x01, 0x05}, {0x0401, 0x09, 0x05},
-	{0x0041, 0x05, 0x05}, {0x4001, 0x0d, 0x05}, {0x0003, 0x00, 0x05},
-	{0x0201, 0x08, 0x05}, {0x0021, 0x04, 0x05}, {0x2001, 0x0c, 0x05},
-	{0x0009, 0x02, 0x05}, {0x0801, 0x0a, 0x05}, {0x0081, 0x06, 0x05},
-	{0x0000, 0x00, 0x05}, {0x0002, 0x00, 0x05}, {0x0181, 0x07, 0x05},
-	{0x0019, 0x03, 0x05}, {0x1801, 0x0b, 0x05}, {0x0007, 0x01, 0x05},
-	{0x0601, 0x09, 0x05}, {0x0061, 0x05, 0x05}, {0x6001, 0x0d, 0x05},
-	{0x0004, 0x00, 0x05}, {0x0301, 0x08, 0x05}, {0x0031, 0x04, 0x05},
-	{0x3001, 0x0c, 0x05}, {0x000d, 0x02, 0x05}, {0x0c01, 0x0a, 0x05},
-	{0x00c1, 0x06, 0x05}, {0x0000, 0x00, 0x05}
+static const uint32 dsttctable[] = {
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025
 };
 
+#endif
 
 #define AUTOINCLUDE_1
 	#include "inflator.c"
