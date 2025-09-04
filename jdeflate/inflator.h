@@ -90,39 +90,41 @@ typedef struct TInflator TInflator;
 
 
 /*
- * */
+ * Create an inflator instance. If allctr is NULL, the default allocator is
+ * used. */
 TInflator* inflator_create(TAllocator* allctr);
 
 /*
- * */
+ * Destroy the inflator instance. */
 void inflator_destroy(TInflator*);
 
 /*
- * */
+ * Set the source buffer for the inflator. */
 CTB_INLINE void inflator_setsrc(TInflator*, uint8* source, uintxx size);
 
 /*
- * */
+ * Set the target buffer for the inflator. */
 CTB_INLINE void inflator_settgt(TInflator*, uint8* target, uintxx size);
 
 /*
- * */
+ * Get the number of bytes read from the source buffer. */
 CTB_INLINE uintxx inflator_srcend(TInflator*);
 
 /*
- * */
+ * Get the number of bytes written to the target buffer. */
 CTB_INLINE uintxx inflator_tgtend(TInflator*);
 
 /*
- * */
+ * Perform inflation. If final is non-zero, it indicates that this is the last
+ * chunk of input data. */
 eINFLTResult inflator_inflate(TInflator*, uintxx final);
 
 /*
- * */
+ * Set the dictionary for the inflator. */
 void inflator_setdctnr(TInflator*, uint8* dict, uintxx size);
 
 /*
- * */
+ * Reset the inflator to its initial state. */
 void inflator_reset(TInflator*);
 
 

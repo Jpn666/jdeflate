@@ -1333,7 +1333,7 @@ buildtables(struct TDEFLTExtra* extra)
 #define ENSURE2ON64(T, B, C)
 #define ENSURE3ON64(T, B, C)
 #define ENSURE4ON64(T, B, C)
-#define ENSURE2ON32(T, B, C) if (CTB_EXPECT1((C) > 16)) { W2(T, B); (C) -= 16; }
+#define ENSURE2ON32(T, B, C) if (CTB_EXPECT1(C > 16)) { W2(T, B); C -= 16; }
 
 #endif
 
