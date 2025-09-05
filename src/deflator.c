@@ -2470,7 +2470,10 @@ shouldsplit(struct TDEFLTStats* stats)
 	}
 
 	for (j = 0; j < 32; j++) {
-		stats->prevobs[j] = (stats->prevobs[j] >> 1) + (stats->currobs[j] >> 1);
+		uintxx m;
+
+		m = (stats->prevobs[j] >> 1) + (stats->currobs[j] >> 1);
+		stats->prevobs[j] = m;
 		stats->currobs[j] = 0;
 	}
 

@@ -19,7 +19,7 @@
 #include <ctoolbox/crypto/adler32.h>
 
 
-#define ZIOBFFRSZ 8192
+#define ZIOBFFRSZ 16384
 
 
 CTB_INLINE void*
