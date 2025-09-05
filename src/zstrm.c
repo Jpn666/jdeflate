@@ -162,8 +162,8 @@ zstrm_reset(TZStrm* state)
 {
 	CTB_ASSERT(state);
 
-	state->state  = 0;
-	state->error  = 0;
+	state->state = 0;
+	state->error = 0;
 	if (state->smode == ZSTRM_RMODE) {
 		state->stype = 0;
 	}
@@ -180,7 +180,7 @@ zstrm_reset(TZStrm* state)
 	state->adler = 1;
 	state->total = 0;
 
-	state->result = 0;
+	state->result  = 0;
 	state->iofn    = NULL;
 	state->payload = NULL;
 

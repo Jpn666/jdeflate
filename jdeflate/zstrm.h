@@ -132,32 +132,37 @@ typedef struct TZStrm TZStrm;
 TZStrm* zstrm_create(uintxx flags, uintxx level, TAllocator* allctr);
 
 /*
- * */
+ * Destroys the stream. */
 void zstrm_destroy(TZStrm*);
 
 /*
- * */
+ * Resets the stream state. */
 void zstrm_reset(TZStrm*);
 
 /*
- * */
+ * Sets the IO function. */
 void zstrm_setiofn(TZStrm*, TZStrmIOFn fn, void* payload);
 
 /*
- * */
+ * Sets the dictionary. */
 void zstrm_setdctn(TZStrm*, uint8* dict, uintxx size);
 
 /*
- *  */
+ * Flushes the output buffer. If 'final' is true, finishes the stream. */
 void zstrm_flush(TZStrm*, bool final);
 
 /*
- * */
+ * Read data from the stream.
+ * Returns the number of bytes read or 0 if there is an error. */
 uintxx zstrm_r(TZStrm*,       void* buffer, uintxx size);
+
+/*
+ * Write data to the stream.
+ * Returns the number of bytes written or 0 if there is an error. */
 uintxx zstrm_w(TZStrm*, const void* buffer, uintxx size);
 
 /*
- * */
+ * Get the current state of the stream. */
 uintxx zstrm_getstate(TZStrm*, uintxx* error);
 
 #endif
