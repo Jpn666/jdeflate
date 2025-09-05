@@ -1822,10 +1822,9 @@ slidehash(struct TDeflator* state)
 	#define GETSHEAD4(B, N) ((*((uint32*) ((B) + (N)))))
 #else
 	#define GETSHEAD4(B, N) \
-	    ((B)[(N) + 0] << 0x00) | \
-	    ((B)[(N) + 1] << 0x08) | \
-	    ((B)[(N) + 2] << 0x10) | \
-	    ((B)[(N) + 3] << 0x18)
+	    (((B)[(N) + 0] << 0x00) | \
+	     ((B)[(N) + 1] << 0x08) | \
+	     ((B)[(N) + 2] << 0x10) | ((B)[(N) + 3] << 0x18))
 #endif
 
 CTB_FORCEINLINE uint32
