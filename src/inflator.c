@@ -113,7 +113,7 @@ struct TINFLTPrvt {
 	}
 	*tables;
 
-	uint8 wndnbuffer[WNDWSIZE + 32];
+	uint8 wndnbuffer[1];
 };
 
 #endif
@@ -145,12 +145,15 @@ dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
 TInflator*
 inflator_create(TAllocator* allctr)
 {
+	uintxx n;
 	struct TInflator* state;
 
+	n = sizeof(struct TINFLTPrvt) + WNDWSIZE + 32;
 	if (allctr == NULL) {
 		allctr = (void*) ctb_getdefaultallocator();
 	}
-	state = allctr->request(sizeof(struct TINFLTPrvt), allctr->user);
+
+	state = allctr->request(n, allctr->user);
 	if (state == NULL) {
 		return NULL;
 	}
@@ -1225,36 +1228,23 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 #endif
 
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-	#if defined(CTB_ENV64)
-		#define LOADWORD(S) ((CTB_SWAP64ONBE(((bitbuffer*) (S))[0]) & BBMASK))
-	#else
-		#define LOADWORD(S) ((CTB_SWAP32ONBE(((bitbuffer*) (S))[0]) & BBMASK))
-	#endif
+	#define LOAD64(S) ((CTB_SWAP64ONBE(((uint64*) (S))[0]) & BBMASK))
 #else
-	#if defined(CTB_ENV64)
-		#define LOADWORD(S) \
-			((((bitbuffer) (S)[0]) << 0x00) | \
-			 (((bitbuffer) (S)[1]) << 0x08) | \
-			 (((bitbuffer) (S)[2]) << 0x10) | \
-			 (((bitbuffer) (S)[3]) << 0x18) | \
-			 (((bitbuffer) (S)[4]) << 0x20) | (((bitbuffer) (S)[5]) << 0x28))
-	#else
-		#define LOADWORD(S) \
-			((((bitbuffer) (S)[0]) << 0x00) | (((bitbuffer) (S)[1]) << 0x08))
+	#define LOAD64(S) \
+			((((uint64) (S)[0]) << 0x00) | \
+			 (((uint64) (S)[1]) << 0x08) | \
+			 (((uint64) (S)[2]) << 0x10) | \
+			 (((uint64) (S)[3]) << 0x18) | \
+			 (((uint64) (S)[4]) << 0x20) | \
+			 (((uint64) (S)[5]) << 0x28) | (((uint64) (S)[6]) << 0x30))
 	#endif
 #endif
 
 #define DROPBITS(BB, BC, N) (((BB) = (BB) >> (N)), ((BC) -= (N)))
 
 
-#if defined(CTB_ENV64)
-	#define FASTSRCLEFT 15
-	#define FASTTGTLEFT (258 + 8)
-#else
-	#define FASTSRCLEFT 10
-	#define FASTTGTLEFT 266
-#endif
-
+#define FASTSRCLEFT 15
+#define FASTTGTLEFT 266
 
 static uintxx decodefast(struct TInflator* state);
 
