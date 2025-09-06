@@ -1231,13 +1231,12 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 	#define LOAD64(S) ((CTB_SWAP64ONBE(((uint64*) (S))[0]) & BBMASK))
 #else
 	#define LOAD64(S) \
-			((((uint64) (S)[0]) << 0x00) | \
-			 (((uint64) (S)[1]) << 0x08) | \
-			 (((uint64) (S)[2]) << 0x10) | \
-			 (((uint64) (S)[3]) << 0x18) | \
-			 (((uint64) (S)[4]) << 0x20) | \
-			 (((uint64) (S)[5]) << 0x28) | (((uint64) (S)[6]) << 0x30))
-	#endif
+		((((uint64) (S)[0]) << 0x00) | \
+		 (((uint64) (S)[1]) << 0x08) | \
+		 (((uint64) (S)[2]) << 0x10) | \
+		 (((uint64) (S)[3]) << 0x18) | \
+		 (((uint64) (S)[4]) << 0x20) | \
+		 (((uint64) (S)[5]) << 0x28) | (((uint64) (S)[6]) << 0x30))
 #endif
 
 #define DROPBITS(BB, BC, N) (((BB) = (BB) >> (N)), ((BC) -= (N)))
