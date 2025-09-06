@@ -1534,7 +1534,7 @@ decodefast(struct TInflator* state)
 
 	r = 0;
 	do {
-		bb |= LOADWORD(source) << bc;
+		bb |= LOAD64(source) << bc;
 		source = (source + 7) - ((bc >> 3) & 0x07);
 		bc |= 56;
 
@@ -1588,7 +1588,7 @@ L_L1:
 			DROPBITS(bb, bc, (uint8) e);
 
 			if (bc < 13) {
-				bb |= LOADWORD(source) << bc;
+				bb |= LOAD64(source) << bc;
 				source = (source + 7) - ((bc >> 3) & 0x07);
 				bc |= 56;
 			}
