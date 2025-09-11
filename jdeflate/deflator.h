@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef eeae4737_b1d4_4c86_a65c_3cb01efe6c42
-#define eeae4737_b1d4_4c86_a65c_3cb01efe6c42
+#ifndef acf80c9b_c996_4de9_a00d_e9bcdaa45240
+#define acf80c9b_c996_4de9_a00d_e9bcdaa45240
 
 /*
  * deflator.h
@@ -70,7 +70,10 @@ typedef enum {
 } eDEFLTError;
 
 
-#define DEFLT_BADSTATE 0xDEADBEEF
+/* Flags */
+typedef enum {
+	DEFLT_STATICCODES = 0x10
+} eDEFLTFlags;
 
 
 /* Public struct */
@@ -78,6 +81,7 @@ struct TDeflator {
 	/* state */
 	uintxx state;
 	uintxx error;
+	uintxx flags;
 	uintxx flush;
 
 	/* stream buffers */
@@ -94,7 +98,7 @@ typedef struct TDeflator TDeflator;
 
 /*
  * Create a deflator instance with the specified compression level. */
-TDeflator* deflator_create(uintxx level, TAllocator* allctr);
+TDeflator* deflator_create(uintxx flags, uintxx level, TAllocator* allctr);
 
 /*
  * Destroy a deflator instance. */
@@ -140,7 +144,7 @@ deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 	if (CTB_EXPECT0(state->flush)) {
 		if (state->error) {
 			state->error = DEFLT_EINCORRECTUSE;
-			state->state = DEFLT_BADSTATE;
+			state->state = 0xDEADBEEF;
 		}
 		return;
 	}

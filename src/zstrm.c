@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,14 +107,14 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 	state->defltr = NULL;
 
 	if (mode == ZSTRM_RMODE) {
-		state->infltr = inflator_create(allctr);
+		state->infltr = inflator_create(0, allctr);
 		if (state->infltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
 		}
 	}
 	else {
-		state->defltr = deflator_create((state->level = level), allctr);
+		state->defltr = deflator_create(0, (state->level = level), allctr);
 		if (state->defltr == NULL) {
 			zstrm_destroy(state);
 			return NULL;
@@ -133,6 +133,7 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 			if (type & ZSTRM_ZLIB) state->doadler = 1;
 		}
 	}
+
 	state->flags = flags;
 	zstrm_reset(state);
 	return state;

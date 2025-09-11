@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,12 @@
 
 /* Deflate format definitions */
 #define DEFLT_MAXBITS  15
-#define WNDWSIZE       32768
+#define DEFLT_WINDOWSZ 32768
 
 #define DEFLT_LMAXSYMBOL 288
 #define DEFLT_DMAXSYMBOL 32
 #define DEFLT_CMAXSYMBOL 19
+
 
 /* Root bits for main tables */
 #define LROOTBITS 10
@@ -72,6 +73,8 @@ struct TINFLTPrvt {
 	struct TInflator hidden;
 
 	/* state */
+	uintxx towindow;
+
 	uintxx substate;
 	uintxx final;
 	uintxx used;
@@ -99,29 +102,33 @@ struct TINFLTPrvt {
 	uintxx bcount;
 
 	/* window buffer */
-	uintxx wndnend;  /* window buffer end and total bytes */
-	uintxx wndncnt;
+	uintxx wndwend;  /* window buffer end and total bytes */
+	uintxx wndwcnt;
+
+	/* size of the window buffer */
+	uintxx wndwsize;
 
 	/* dynamic tables (trees) */
 	struct TTINFLTTables {
 		/* */
-		uint32 symbols[
-			ENOUGHL + ENOUGHD
-		];
+		uint32 symbols[ENOUGHL + ENOUGHD];
 
-		uint16 lengths[DEFLT_LMAXSYMBOL + DEFLT_DMAXSYMBOL];
+		uint16 lengths[
+			DEFLT_LMAXSYMBOL +
+			DEFLT_DMAXSYMBOL
+		];
 	}
 	*tables;
 
-	uint8 wndnbuffer[1];
+	uint8 wndwbuffer[1];
 };
 
 #endif
 
-
 #if defined(AUTOINCLUDE_1)
 
-#define PRVT ((struct TINFLTPrvt*) state)
+
+#define WNDWSIZE 65536
 
 
 CTB_INLINE void*
@@ -142,8 +149,11 @@ dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
 	a->dispose(memory, size, a->user);
 }
 
+
+#define PRVT ((struct TINFLTPrvt*) state)
+
 TInflator*
-inflator_create(TAllocator* allctr)
+inflator_create(uintxx flags, TAllocator* allctr)
 {
 	uintxx n;
 	struct TInflator* state;
@@ -157,18 +167,23 @@ inflator_create(TAllocator* allctr)
 	if (state == NULL) {
 		return NULL;
 	}
-	PRVT->allctr = allctr;
+	PRVT->wndwsize = WNDWSIZE;
 
-	PRVT->tables = NULL;
+	PRVT->allctr = allctr;
 	inflator_reset(state);
 	if (state->error) {
 		inflator_destroy(state);
 		return NULL;
 	}
+
+	state->flags = flags;
 	return state;
 }
 
+#undef WNDWSIZE
 
+
+#define SETSTATE(STATE) (state->state = (STATE))
 #define SETERROR(ERROR) (state->error = (ERROR))
 
 void
@@ -189,6 +204,7 @@ inflator_reset(TInflator* state)
 	state->tend   = NULL;
 
 	/* private fields */
+	PRVT->towindow = 0;
 	PRVT->final    = 0;
 	PRVT->substate = 0;
 
@@ -201,8 +217,8 @@ inflator_reset(TInflator* state)
 
 	PRVT->bbuffer = 0;
 	PRVT->bcount  = 0;
-	PRVT->wndnend = 0;
-	PRVT->wndncnt = 0;
+	PRVT->wndwend = 0;
+	PRVT->wndwcnt = 0;
 
 	/* */
 	if (PRVT->tables == NULL) {
@@ -215,7 +231,7 @@ inflator_reset(TInflator* state)
 
 L_ERROR:
 	SETERROR(INFLT_EOOM);
-	state->state = INFLT_BADSTATE;
+	SETSTATE(0xDEADBEEF);
 }
 
 void
@@ -625,33 +641,40 @@ updatewindow(struct TInflator* state)
 		return;
 	}
 
-	if (total >= WNDWSIZE) {
-		ctb_memcpy(PRVT->wndnbuffer, state->target - WNDWSIZE, WNDWSIZE);
+	if (total >= DEFLT_WINDOWSZ) {
+		if (PRVT->towindow == 0) {
+			begin = state->target - DEFLT_WINDOWSZ;
+			ctb_memcpy(PRVT->wndwbuffer, begin, DEFLT_WINDOWSZ);
 
-		PRVT->wndncnt = WNDWSIZE;
-		PRVT->wndnend = WNDWSIZE;
+			PRVT->wndwend = DEFLT_WINDOWSZ;
+		}
+		PRVT->wndwcnt = DEFLT_WINDOWSZ;
 		return;
 	}
 
-	begin = state->target - total;
-	if (PRVT->wndncnt < WNDWSIZE) {
-		PRVT->wndncnt += total;
-		if (PRVT->wndncnt > WNDWSIZE)
-			PRVT->wndncnt = WNDWSIZE;
+	if (PRVT->wndwcnt < DEFLT_WINDOWSZ) {
+		PRVT->wndwcnt += total;
+		if (PRVT->wndwcnt > DEFLT_WINDOWSZ)
+			PRVT->wndwcnt = DEFLT_WINDOWSZ;
 	}
 
-	maxrun = WNDWSIZE - PRVT->wndnend;
+	maxrun = PRVT->wndwsize - PRVT->wndwend;
 	if (total < maxrun)
 		maxrun = total;
-	ctb_memcpy(PRVT->wndnbuffer + PRVT->wndnend, begin, maxrun);
 
+	begin = state->target - total;
+	if (PRVT->towindow == 0) {
+		ctb_memcpy(PRVT->wndwbuffer + PRVT->wndwend, begin, maxrun);
+	}
 	total -= maxrun;
 	if (total) {
-		ctb_memcpy(PRVT->wndnbuffer, begin + maxrun, total);
-		PRVT->wndnend = total;
+		if (PRVT->towindow == 0) {
+			ctb_memcpy(PRVT->wndwbuffer, begin + maxrun, total);
+		}
+		PRVT->wndwend = total;
 	}
 	else {
-		PRVT->wndnend = PRVT->wndnend + maxrun;
+		PRVT->wndwend = PRVT->wndwend + maxrun;
 	}
 }
 
@@ -664,7 +687,7 @@ setstatictables(struct TInflator* state)
 	PRVT->dtable = (void*) dsttctable;
 #else
 	uintxx j;
-	struct TTINFLTTables * tables;
+	struct TTINFLTTables* tables;
 
 	tables = PRVT->tables;
 
@@ -710,6 +733,20 @@ inflator_inflate(TInflator* state, uintxx final)
 	}
 
 	PRVT->used = 1;
+	if (CTB_EXPECT0(PRVT->towindow)) {
+		r = PRVT->wndwsize - PRVT->wndwend;
+		if (PRVT->wndwend == PRVT->wndwsize) {
+			r = PRVT->wndwsize;
+			state->target = PRVT->wndwbuffer;
+		}
+		else {
+			state->target = PRVT->wndwbuffer + PRVT->wndwend;
+		}
+
+		state->tbgn = state->target;
+		state->tend = state->target + r;
+	}
+
 L_DECODE:
 	if (CTB_EXPECT1(state->state == 5)) {
 		if (CTB_EXPECT1((r = decodeblock(state)) != 0)) {
@@ -719,22 +756,22 @@ L_DECODE:
 			}
 			return r;
 		}
-		state->state = 0;
+		SETSTATE(0);
 	}
 
 	for (;;) {
 		switch (state->state) {
 			case 0: {
 				if (CTB_EXPECT0(PRVT->final)) {
-					state->state = INFLT_BADSTATE;
+					SETSTATE(0xDEADBEEF);
 					return INFLT_OK;
 				}
 
 				if (tryreadbits(state, 3)) {
 					PRVT->final  = readbits(state, 1); dropbits(state, 1);
 					state->state = readbits(state, 2); dropbits(state, 2);
-
-					state->state++;
+					
+					SETSTATE(state->state + 1);
 					continue;
 				}
 
@@ -756,7 +793,7 @@ L_DECODE:
 					}
 					return r;
 				}
-				state->state = 0;
+				SETSTATE(0);
 				continue;
 			}
 
@@ -764,7 +801,7 @@ L_DECODE:
 			case 2: {
 				setstatictables(state);
 
-				state->state = 5;
+				SETSTATE(5);
 				goto L_DECODE;
 			}
 
@@ -778,7 +815,7 @@ L_DECODE:
 					return r;
 				}
 
-				state->state = 5;
+				SETSTATE(5);
 				goto L_DECODE;
 			}
 
@@ -805,18 +842,18 @@ inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 
 	if (PRVT->used) {
 		SETERROR(INFLT_EINCORRECTUSE);
-		state->state = INFLT_BADSTATE;
+		SETSTATE(0xDEADBEEF);
 		return;
 	}
 
-	if (size > WNDWSIZE) {
-		dict = (dict + size) - WNDWSIZE;
-		size = WNDWSIZE;
+	if (size > DEFLT_WINDOWSZ) {
+		dict = (dict + size) - DEFLT_WINDOWSZ;
+		size = DEFLT_WINDOWSZ;
 	}
 
-	ctb_memcpy(PRVT->wndnbuffer, dict, size);
-	PRVT->wndnend   = size;
-	PRVT->wndncnt = size;
+	ctb_memcpy(PRVT->wndwbuffer, dict, size);
+	PRVT->wndwend = size;
+	PRVT->wndwcnt = size;
 
 	PRVT->used = 1;
 }
@@ -1096,6 +1133,12 @@ L_STATE2:
 #define sbextra   PRVT->aux1
 #define sdistance PRVT->aux2
 
+#if defined(CTB_ENV64)
+	#define PLATFORMWORDSIZE 8
+#else
+	#define PLATFORMWORDSIZE 4
+#endif
+
 static uintxx
 copybytes(struct TInflator* state, uintxx distance, uintxx length)
 {
@@ -1122,18 +1165,18 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 
 		if (distance > total) {
 			maxrun = distance - total;
-			if (CTB_EXPECT0(maxrun > PRVT->wndncnt)) {
+			if (CTB_EXPECT0(maxrun > PRVT->wndwcnt)) {
 				SETERROR(INFLT_EFAROFFSET);
 				return INFLT_ERROR;
 			}
 
-			buffer = PRVT->wndnbuffer;
-			if (maxrun > PRVT->wndnend) {
-				maxrun -= PRVT->wndnend;
-				buffer += WNDWSIZE - maxrun;
+			buffer = PRVT->wndwbuffer;
+			if (maxrun > PRVT->wndwend) {
+				maxrun -= PRVT->wndwend;
+				buffer += PRVT->wndwsize - maxrun;
 			}
 			else {
-				buffer += PRVT->wndnend - maxrun;
+				buffer += PRVT->wndwend - maxrun;
 			}
 
 			if (maxrun > length)
@@ -1151,56 +1194,25 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 		total += maxrun;
 		rmnng -= maxrun;
 
-		for (;maxrun > 16; maxrun -= 16) {
+		if (distance >= PLATFORMWORDSIZE) {
+			for (;maxrun > 8; maxrun -= 8) {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-			((uint32*) target)[0] = ((uint32*) buffer)[0];
-			((uint32*) target)[1] = ((uint32*) buffer)[1];
-			((uint32*) target)[2] = ((uint32*) buffer)[2];
-			((uint32*) target)[3] = ((uint32*) buffer)[3];
-			target += 16;
-			buffer += 16;
+				((uint32*) target)[0] = ((uint32*) buffer)[0];
+				((uint32*) target)[1] = ((uint32*) buffer)[1];
 #else
-			target[0] = buffer[0];
-			target[1] = buffer[1];
-			target[2] = buffer[2];
-			target[3] = buffer[3];
-			target[4] = buffer[4];
-			target[5] = buffer[5];
-			target[6] = buffer[6];
-			target[7] = buffer[7];
-			target += 8;
-			buffer += 8;
+				target[0] = buffer[0];
+				target[1] = buffer[1];
+				target[2] = buffer[2];
+				target[3] = buffer[3];
 
-			target[0] = buffer[0];
-			target[1] = buffer[1];
-			target[2] = buffer[2];
-			target[3] = buffer[3];
-			target[4] = buffer[4];
-			target[5] = buffer[5];
-			target[6] = buffer[6];
-			target[7] = buffer[7];
-			target += 8;
-			buffer += 8;
+				target[4] = buffer[4];
+				target[5] = buffer[5];
+				target[6] = buffer[6];
+				target[7] = buffer[7];
 #endif
-		}
-
-		for (;maxrun > 8; maxrun -= 8) {
-#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-			((uint32*) target)[0] = ((uint32*) buffer)[0];
-			((uint32*) target)[1] = ((uint32*) buffer)[1];
-#else
-			target[0] = buffer[0];
-			target[1] = buffer[1];
-			target[2] = buffer[2];
-			target[3] = buffer[3];
-
-			target[4] = buffer[4];
-			target[5] = buffer[5];
-			target[6] = buffer[6];
-			target[7] = buffer[7];
-#endif
-			target += 8;
-			buffer += 8;
+				target += 8;
+				buffer += 8;
+			}
 		}
 
 		do {
@@ -1499,13 +1511,6 @@ L_SRCEXHSTD:
 #endif
 
 
-#if defined(CTB_ENV64)
-	#define PLATFORMWORDSIZE 8
-#else
-	#define PLATFORMWORDSIZE 4
-#endif
-
-
 static uintxx
 decodefast(struct TInflator* state)
 {
@@ -1662,18 +1667,18 @@ L_L1:
 				do {
 					if (CTB_EXPECT0(distance > maxrun)) {
 						maxrun = distance - maxrun;
-						if (CTB_EXPECT0(maxrun > PRVT->wndncnt)) {
+						if (CTB_EXPECT0(maxrun > PRVT->wndwcnt)) {
 							SETERROR(INFLT_EFAROFFSET);
 							return INFLT_ERROR;
 						}
 
-						buffer = PRVT->wndnbuffer;
-						if (maxrun > PRVT->wndnend) {
-							maxrun -= PRVT->wndnend;
-							buffer += WNDWSIZE - maxrun;
+						buffer = PRVT->wndwbuffer;
+						if (maxrun > PRVT->wndwend) {
+							maxrun -= PRVT->wndwend;
+							buffer += PRVT->wndwsize - maxrun;
 						}
 						else {
-							buffer += PRVT->wndnend - maxrun;
+							buffer += PRVT->wndwend - maxrun;
 						}
 
 						if (maxrun > length)
@@ -1685,45 +1690,7 @@ L_L1:
 					}
 
 					length -= maxrun;
-					if (CTB_EXPECT1(maxrun >= PLATFORMWORDSIZE)) {
-						for (;maxrun > 16; maxrun -= 16) {
-#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-#if defined(CTB_ENV64)
-							((uint64*) target)[0] = ((uint64*) buffer)[0];
-							((uint64*) target)[1] = ((uint64*) buffer)[1];
-#else
-							((uint32*) target)[0] = ((uint32*) buffer)[0];
-							((uint32*) target)[1] = ((uint32*) buffer)[1];
-							((uint32*) target)[2] = ((uint32*) buffer)[2];
-							((uint32*) target)[3] = ((uint32*) buffer)[3];
-#endif
-							target += 16;
-							buffer += 16;
-#else
-							target[0] = buffer[0];
-							target[1] = buffer[1];
-							target[2] = buffer[2];
-							target[3] = buffer[3];
-							target[4] = buffer[4];
-							target[5] = buffer[5];
-							target[6] = buffer[6];
-							target[7] = buffer[7];
-							
-							target += 8;
-							buffer += 8;
-							target[0] = buffer[0];
-							target[1] = buffer[1];
-							target[2] = buffer[2];
-							target[3] = buffer[3];
-							target[4] = buffer[4];
-							target[5] = buffer[5];
-							target[6] = buffer[6];
-							target[7] = buffer[7];
-							target += 8;
-							buffer += 8;
-#endif
-						}
-
+					if (CTB_EXPECT1(distance >= PLATFORMWORDSIZE)) {
 						for (;maxrun > 8; maxrun -= 8) {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
 #if defined(CTB_ENV64)
@@ -1732,8 +1699,6 @@ L_L1:
 							((uint32*) target)[0] = ((uint32*) buffer)[0];
 							((uint32*) target)[1] = ((uint32*) buffer)[1];
 #endif
-							target += 8;
-							buffer += 8;
 #else
 							target[0] = buffer[0];
 							target[1] = buffer[1];
@@ -1743,32 +1708,15 @@ L_L1:
 							target[5] = buffer[5];
 							target[6] = buffer[6];
 							target[7] = buffer[7];
+#endif
 							target += 8;
 							buffer += 8;
-#endif
 						}
+					}
 
-						do {
-							*target++ = *buffer++;
-						} while (--maxrun);
-					}
-					else {
-						switch (maxrun) {
-#if defined(CTB_ENV64)
-							case 7: *target++ = *buffer++;  /* fallthrough */
-							case 6: *target++ = *buffer++;  /* fallthrough */
-							case 5: *target++ = *buffer++;  /* fallthrough */
-							case 4: *target++ = *buffer++;  /* fallthrough */
-							case 3: *target++ = *buffer++;  /* fallthrough */
-							case 2: *target++ = *buffer++;  /* fallthrough */
-							case 1: *target++ = *buffer++;  /* fallthrough */
-#else
-							case 3: *target++ = *buffer++;  /* fallthrough */
-							case 2: *target++ = *buffer++;  /* fallthrough */
-							case 1: *target++ = *buffer++;  /* fallthrough */
-#endif
-						}
-					}
+					do {
+						*target++ = *buffer++;
+					} while (--maxrun);
 					maxrun = (uintxx) (target - state->tbgn);
 				} while (length);
 			}
@@ -1808,8 +1756,8 @@ L_L1:
 #undef sbextra
 #undef sdistance
 
-#else
 
+#else
 
 /* ****************************************************************************
  * Static Tables

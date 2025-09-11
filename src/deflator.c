@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include <jdeflate/deflator.h>
 #include <ctoolbox/ulog2.h>
+
 
 #if defined(AUTOINCLUDE_1)
 
@@ -183,8 +184,6 @@ struct TDEFLTPrvt {
 	struct TAllocator* allctr;
 };
 
-typedef struct TMFinder TMFinder;
-
 #endif
 
 
@@ -221,6 +220,7 @@ getmeminfo(uintxx level)
 
 #define GETWNBFFSZ(M) ((uintxx) 1L << (((M) >> 0x08) & 0xff))
 #define GETLZBFFSZ(M) ((uintxx) 1L << (((M) >> 0x00) & 0xff))
+
 
 #define PRVT ((struct TDEFLTPrvt*) state)
 
@@ -368,7 +368,7 @@ allocatemem(TDeflator* state, uintxx meminfo)
 
 
 TDeflator*
-deflator_create(uintxx level, TAllocator* allctr)
+deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
 {
 	struct TDeflator* state;
 
@@ -401,6 +401,8 @@ deflator_create(uintxx level, TAllocator* allctr)
 		deflator_destroy(state);
 		return NULL;
 	}
+
+	state->flags = flags;
 	return state;
 }
 
@@ -716,7 +718,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 					state->flush = 0;
 				}
 				else {
-					SETSTATE(DEFLT_BADSTATE);
+					SETSTATE(0xDEADBEEF);
 				}
 				return r;
 			}
@@ -728,7 +730,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 
 L_ERROR:
 	if (state->error == 0) {
-		SETERROR(DEFLT_EBADSTATE);
+		SETERROR(0xDEADBEEF);
 	}
 	return DEFLT_ERROR;
 }
@@ -1647,6 +1649,7 @@ flushblock(struct TDeflator* state)
 {
 	uintxx total;
 	uintxx r;
+	bool dostatic;
 
 	switch (PRVT->substate) {
 		case 0:
@@ -1669,11 +1672,14 @@ flushblock(struct TDeflator* state)
 	PRVT->zend[0] = BLOCKENDSYMBOL;
 	PRVT->zend++;
 
-	PRVT->blocktype = BLOCKDNMC;
+	dostatic = (PRVT->level == 1) || (state->flags & DEFLT_STATICCODES);
 
 	/* force an static block for small blocks */
-	if (total < 0x400 || PRVT->level == 1) {
+	if (dostatic == 1 || total < 0x400) {
 		PRVT->blocktype = BLOCKSTTC;
+	}
+	else {
+		PRVT->blocktype = BLOCKDNMC;
 	}
 
 	if (PRVT->blocktype == BLOCKDNMC) {
@@ -2005,7 +2011,7 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 	else {
 		if (PRVT->used) {
 			SETERROR(DEFLT_EINCORRECTUSE);
-			SETSTATE(DEFLT_BADSTATE);
+			SETSTATE(0xDEADBEEF);
 			return;
 		}
 	}

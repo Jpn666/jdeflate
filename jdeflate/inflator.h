@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,15 +66,13 @@ typedef enum {
 } eINFLTError;
 
 
-#define INFLT_BADSTATE 0xDEADBEEF
-
-
 /* Public struct */
 struct TInflator {
 	/* state */
 	uintxx state;
-	uintxx finalinput;
 	uintxx error;
+	uintxx flags;
+	uintxx finalinput;
 
 	/* stream buffers */
 	uint8* source;
@@ -92,7 +90,7 @@ typedef struct TInflator TInflator;
 /*
  * Create an inflator instance. If allctr is NULL, the default allocator is
  * used. */
-TInflator* inflator_create(TAllocator* allctr);
+TInflator* inflator_create(uintxx flags, TAllocator* allctr);
 
 /*
  * Destroy the inflator instance. */
@@ -139,7 +137,7 @@ inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 	if (CTB_EXPECT0(state->finalinput)) {
 		if (state->error == 0) {
 			state->error = INFLT_EINCORRECTUSE;
-			state->state = INFLT_EBADSTATE;
+			state->state = 0xDEADBEEF;
 		}
 		return;
 	}
