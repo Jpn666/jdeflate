@@ -45,8 +45,7 @@ typedef enum {
 typedef enum {
 	ZSTRM_DFLT = 0x01000,
 	ZSTRM_ZLIB = 0x02000,
-	ZSTRM_GZIP = 0x04000,
-	ZSTRM_AUTO = ZSTRM_DFLT | ZSTRM_ZLIB | ZSTRM_GZIP
+	ZSTRM_GZIP = 0x04000
 } eZSTRMType;
 
 
@@ -116,9 +115,15 @@ struct TZStrmPblc {
 	/* IO callback parameter */
 	void* payload;
 
-	/* source buffer, this pointer will be updated after each inflate call */
+	/* source buffer */
 	uint8* source;
 	uint8* send;
+
+	/* number of bytes consumed from the source buffer or IO callback, this
+	 * may not reflect the actual number of bytes readed if the source callback
+	 * is used, but can be used to determine the end of the stream if you
+	 * need to know how much valid data has been processed. */
+	uintxx usedinput;
 };
 
 typedef const struct TZStrmPblc TZStrm;
@@ -161,8 +166,8 @@ uintxx zstrm_deflate(TZStrm*, void* source, uintxx n);
 /*
  * Flushes the output to the stream target buffer or callback function.
  * This function can be used to ensure that all data is written
- * to the output. When final is true the stream is finalized
- * and no more data can be written to it. */
+ * to the output. When final is true the stream is finalized and no more data
+ * can be written to it. */
 void zstrm_flush(TZStrm*, bool final);
 
 /*
@@ -176,6 +181,7 @@ void zstrm_reset(TZStrm*);
 CTB_INLINE void
 zstrm_setsource(TZStrm* state, uint8* source, uintxx size)
 {
+	uint8 t[1];
 	struct TZStrmPblc* pblc;
 	CTB_ASSERT(state && source && size);
 
@@ -188,12 +194,15 @@ zstrm_setsource(TZStrm* state, uint8* source, uintxx size)
 	}
 	pblc->state++;
 	pblc->source = source;
-	pblc->send = source + size;
+	pblc->send   = source + size;
+
+	zstrm_inflate(state, t, 0);
 }
 
 CTB_INLINE void
 zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
+	uint8 t[1];
 	struct TZStrmPblc* pblc;
 	CTB_ASSERT(state && fn);
 
@@ -206,7 +215,9 @@ zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 	}
 	pblc->state++;
 	pblc->payload = payload;
-	pblc->iofn = fn;
+	pblc->iofn    = fn;
+
+	zstrm_inflate(state, t, 0);
 }
 
 CTB_INLINE void

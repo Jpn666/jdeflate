@@ -98,7 +98,7 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 		if (mode == ZSTRM_DEFLATE) {
 			return NULL;
 		}
-		flags |= (type = ZSTRM_AUTO);
+		flags |= (type = ZSTRM_DFLT | ZSTRM_ZLIB | ZSTRM_GZIP);
 	}
 
 	if (mode == ZSTRM_DEFLATE) {
@@ -209,10 +209,12 @@ zstrm_reset(TZStrm* pblc)
 	PBLC->total = 0;
 
 	/* IO */
-	PBLC->source = NULL;
-	PBLC->send   = NULL;
-	PBLC->iofn = NULL;
+	PBLC->iofn    = NULL;
 	PBLC->payload = NULL;
+
+	PBLC->source  = NULL;
+	PBLC->send    = NULL;
+	PBLC->usedinput = 0;
 
 	/* private fields */
 	PRVT->result = 0;
@@ -526,9 +528,7 @@ parsehead(struct TZStrmPrvt* zstrm)
 		return 0;
 	}
 
-	if (PBLC->source) {
-		PBLC->source = PRVT->sbgn;
-	}
+	PBLC->usedinput += (uintxx) (PRVT->sbgn - PRVT->source);
 	return 1;
 }
 
@@ -606,7 +606,7 @@ uintxx
 zstrm_inflate(TZStrm* pblc, void* target, uintxx n)
 {
 	struct TZStrmPrvt* zstrm;
-	CTB_ASSERT(pblc);
+	CTB_ASSERT(pblc && target);
 
 	zstrm = (void*) pblc;
 
@@ -654,7 +654,9 @@ zstrm_inflate(TZStrm* pblc, void* target, uintxx n)
 		inflator_setsrc(PRVT->infltr, PRVT->sbgn, total);
 
 		SETSTATE(3);
-		return inflate(PRVT, target, n);
+		if (n != 0) {
+			return inflate(PRVT, target, n);
+		}
 	}
 	else {
 		if (PBLC->state == 2) {
@@ -789,9 +791,7 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 					case ZSTRM_ZLIB: checkzlibtail(PRVT); break;
 				}
 
-				if (PBLC->source) {
-					PBLC->source = PRVT->sbgn;
-				}
+				PBLC->usedinput = (uintxx) (PRVT->sbgn - PRVT->source);
 				SETSTATE(4);
 				return n;
 			}
@@ -813,10 +813,8 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 		((struct TINFLTPrvt*) infltr)->towindow = towindow;
 
 		PRVT->result = inflator_inflate(infltr, PBLC->source != NULL);
-		if (PBLC->source) {
-			PBLC->source = infltr->source;
-		}
 
+		PBLC->usedinput += inflator_srcend(infltr);
 		n = inflator_tgtend(infltr);
 		if (PRVT->result == INFLT_ERROR) {
 			if (n != 0) {
@@ -952,7 +950,7 @@ uintxx
 zstrm_deflate(TZStrm* pblc, void* source, uintxx n)
 {
 	struct TZStrmPrvt* zstrm;
-	CTB_ASSERT(pblc);
+	CTB_ASSERT(pblc && source);
 
 	zstrm = (void*) pblc;
 
