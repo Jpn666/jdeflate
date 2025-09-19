@@ -1,3 +1,4 @@
 .vscode
 builddir/
-subprojects/ctoolbox/
+subprojects/*
+!subprojects/*.wrap
