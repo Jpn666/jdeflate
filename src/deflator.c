@@ -20,10 +20,10 @@
 
 #if defined(AUTOINCLUDE_1)
 
-/* deflate format definitions */
-#define DEFLT_MAXBITS       15
+/* Deflate format definitions */
+#define DEFLT_MAXBITS   15
+#define DEFLT_WINDOWSZ  32768
 #define DEFLT_PCODESMAXBITS 7
-#define DEFLT_WINDOWSZ      32768
 
 #else
 
@@ -42,6 +42,7 @@
 #define HMASK ((1ul << HBITS) - 1)
 #define CMASK ((1ul << CBITS) - 1)
 #define QMASK ((1ul << QBITS) - 1)
+
 
 /* Number of literals (including end of block), match symbols and precodes */
 #define MAXLTCODES 257
@@ -76,7 +77,7 @@ struct TDEFLTPrvt2 {
 /* Private stuff */
 struct TDEFLTPrvt {
 	/* public fields */
-	struct TDeflator hidden;
+	struct TDeflator public;
 
 	/* state */
 	uintxx substate;
@@ -138,7 +139,7 @@ struct TDEFLTPrvt {
 	/* token index */
 	uint16* zptr;
 
-	/* used for any level other than 0 or 1 */
+	/* used for any level other than 0 */
 	struct TDEFLTExtra {
 		/* to count the frequencies (literals-lengths, distaces, precodes) */
 		uintxx lfrqs[DEFLT_LMAXSYMBOL];
@@ -712,8 +713,8 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 					return DEFLT_TGTEXHSTD;
 				}
 				if (state->flush == DEFLT_FLUSH) {
-					/* don't invalidate the state, we can keep compressing
-					 * using the same window */
+					/* we don't invalidate the state here so we can continue
+					 * compressing using the same window */
 					state->state = 0;
 					state->flush = 0;
 				}
@@ -730,8 +731,9 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 
 L_ERROR:
 	if (state->error == 0) {
-		SETERROR(0xDEADBEEF);
+		SETERROR(DEFLT_EBADSTATE);
 	}
+	SETSTATE(0xDEADBEEF);
 	return DEFLT_ERROR;
 }
 
@@ -2003,7 +2005,7 @@ void
 deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 {
 	uintxx i;
-	CTB_ASSERT(state && dict);
+	CTB_ASSERT(state && dict && size);
 
 	if (PRVT->level == 0) {
 		return;

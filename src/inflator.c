@@ -66,15 +66,26 @@
 	#error "table size not defined"
 #endif
 
+/* Window buffer size, this must be greather than or equal
+ * to 32768 + 258 + 32 */
+#define WNDWSIZE 65536
+
 
 /* Private stuff */
 struct TINFLTPrvt {
 	/* public fields */
-	struct TInflator hidden;
+	struct TInflator public;
 
-	/* state */
+    /* 
+	 * Internal flag:
+	 * When set, the window buffer is used directly as the
+	 * output buffer. This allows us to avoid updating the window buffer after
+	 * each inflate call.
+     * When enabled, the public fields 'target', 'tbgn', and 'tend' will be set
+	 * after each inflate call to point into the window buffer. */
 	uintxx towindow;
 
+	/* state */
 	uintxx substate;
 	uintxx final;
 	uintxx used;
@@ -101,12 +112,9 @@ struct TINFLTPrvt {
 #endif
 	uintxx bcount;
 
-	/* window buffer */
-	uintxx wndwend;  /* window buffer end and total bytes */
+	/* window buffer end and total bytes */
+	uintxx wndwend;
 	uintxx wndwcnt;
-
-	/* size of the window buffer */
-	uintxx wndwsize;
 
 	/* dynamic tables (trees) */
 	struct TTINFLTTables {
@@ -120,15 +128,13 @@ struct TINFLTPrvt {
 	}
 	*tables;
 
+	/* window buffer */
 	uint8 wndwbuffer[1];
 };
 
 #endif
 
 #if defined(AUTOINCLUDE_1)
-
-
-#define WNDWSIZE 65536
 
 
 CTB_INLINE void*
@@ -167,9 +173,9 @@ inflator_create(uintxx flags, TAllocator* allctr)
 	if (state == NULL) {
 		return NULL;
 	}
-	PRVT->wndwsize = WNDWSIZE;
-
 	PRVT->allctr = allctr;
+
+    PRVT->tables = NULL;
 	inflator_reset(state);
 	if (state->error) {
 		inflator_destroy(state);
@@ -179,9 +185,6 @@ inflator_create(uintxx flags, TAllocator* allctr)
 	state->flags = flags;
 	return state;
 }
-
-#undef WNDWSIZE
-
 
 #define SETSTATE(STATE) (state->state = (STATE))
 #define SETERROR(ERROR) (state->error = (ERROR))
@@ -244,7 +247,7 @@ inflator_destroy(TInflator* state)
 	if (PRVT->tables) {
 		dispose_(PRVT, PRVT->tables, sizeof(struct TTINFLTTables));
 	}
-	dispose_(PRVT, state, sizeof(struct TINFLTPrvt));
+	dispose_(PRVT, state, sizeof(struct TINFLTPrvt) + WNDWSIZE + 32);
 }
 
 
@@ -352,11 +355,16 @@ reverseinc(uint16 n, uintxx length)
 
 /* Tags for the table entries */
 #define TAG_LIT 0x80000000  /* literal */
-
-#define TAG_NON 0x00008000  /* not a literal-length or distance */
 #define TAG_END 0x00004000  /* end of block */
 #define TAG_SUB 0x00002000  /* subtable */
 
+
+/* Entry layout
+ * Literals:
+ * txxxxxxx vvvvvvvv xxxxxxxx xxxxllll
+ * 
+ * Length or distance (or subtable offset)
+ * vvvvvvvv vvvvvvvv tttteeee xxxxllll */
 
 #define DOENTRY(BASE, EXTRA) (((BASE) << 16) | ((EXTRA) << 8))
 
@@ -519,7 +527,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 				if (entry[0] & TAG_SUB) {
 					continue;
 				}
-				entry[0] = TAG_NON | TAG_SUB | (offset << 16) | (mbits + r);
+				entry[0] = TAG_SUB | (offset << 16) | (mbits + r);
 
 				code = reverseinc(code, mbits);
 				offset += (uintxx) 1 << r;
@@ -542,7 +550,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 		if (mode == DTABLEMODE || symbol >= 256) {
 			if (symbol == 256) {
-				e = TAG_NON | TAG_END | (256 << 16);
+				e = TAG_END;
 			}
 			else {
 				e = sinfo[symbol];
@@ -633,7 +641,6 @@ static void
 updatewindow(struct TInflator* state)
 {
 	uintxx total;
-	uintxx maxrun;
 	uint8* begin;
 
 	total = (uintxx) (state->target - state->tbgn);
@@ -648,6 +655,12 @@ updatewindow(struct TInflator* state)
 
 			PRVT->wndwend = DEFLT_WINDOWSZ;
 		}
+		else {
+			if (PRVT->wndwend == WNDWSIZE) {
+				PRVT->wndwend = 0;
+			}
+			PRVT->wndwend += total;
+		}
 		PRVT->wndwcnt = DEFLT_WINDOWSZ;
 		return;
 	}
@@ -658,23 +671,30 @@ updatewindow(struct TInflator* state)
 			PRVT->wndwcnt = DEFLT_WINDOWSZ;
 	}
 
-	maxrun = PRVT->wndwsize - PRVT->wndwend;
-	if (total < maxrun)
-		maxrun = total;
-
-	begin = state->target - total;
 	if (PRVT->towindow == 0) {
+		uintxx maxrun;
+
+		maxrun = WNDWSIZE - PRVT->wndwend;
+		if (total < maxrun)
+			maxrun = total;
+
+		begin = state->target - total;
 		ctb_memcpy(PRVT->wndwbuffer + PRVT->wndwend, begin, maxrun);
-	}
-	total -= maxrun;
-	if (total) {
-		if (PRVT->towindow == 0) {
+
+		total -= maxrun;
+		if (total) {
 			ctb_memcpy(PRVT->wndwbuffer, begin + maxrun, total);
+			PRVT->wndwend = total;
 		}
-		PRVT->wndwend = total;
+		else {
+			PRVT->wndwend = PRVT->wndwend + maxrun;
+		}
 	}
 	else {
-		PRVT->wndwend = PRVT->wndwend + maxrun;
+		if (PRVT->wndwend == WNDWSIZE) {
+			PRVT->wndwend = 0;
+		}
+		PRVT->wndwend += total;
 	}
 }
 
@@ -734,9 +754,9 @@ inflator_inflate(TInflator* state, uintxx final)
 
 	PRVT->used = 1;
 	if (CTB_EXPECT0(PRVT->towindow)) {
-		r = PRVT->wndwsize - PRVT->wndwend;
-		if (PRVT->wndwend == PRVT->wndwsize) {
-			r = PRVT->wndwsize;
+		r = WNDWSIZE - PRVT->wndwend;
+		if (PRVT->wndwend == WNDWSIZE) {
+			r = WNDWSIZE;
 			state->target = PRVT->wndwbuffer;
 		}
 		else {
@@ -749,10 +769,25 @@ inflator_inflate(TInflator* state, uintxx final)
 
 L_DECODE:
 	if (CTB_EXPECT1(state->state == 5)) {
-		if (CTB_EXPECT1((r = decodeblock(state)) != 0)) {
-			if (state->finalinput && r == INFLT_SRCEXHSTD) {
-				SETERROR(INFLT_EINPUTEND);
-				return INFLT_ERROR;
+		r = decodeblock(state);
+		if (CTB_EXPECT1(r)) {
+			switch (r) {
+				case INFLT_SRCEXHSTD: {
+					if (state->finalinput) {
+						SETERROR(INFLT_EINPUTEND);
+						goto L_ERROR;
+					}
+				}
+
+				/* fallthrough */
+				case INFLT_TGTEXHSTD: {
+					updatewindow(state);
+					break;
+				}
+				
+				case INFLT_ERROR: {
+					goto L_ERROR;
+				}
 			}
 			return r;
 		}
@@ -777,7 +812,7 @@ L_DECODE:
 
 				if (state->finalinput) {
 					SETERROR(INFLT_EINPUTEND);
-					return INFLT_ERROR;
+					goto L_ERROR;
 				}
 				updatewindow(state);
 
@@ -789,7 +824,7 @@ L_DECODE:
 				if (CTB_EXPECT1((r = decodestrd(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
-						return INFLT_ERROR;
+						goto L_ERROR;
 					}
 					return r;
 				}
@@ -810,7 +845,7 @@ L_DECODE:
 				if (CTB_EXPECT1((r = decodednmc(state)) != 0)) {
 					if (state->finalinput && r == INFLT_SRCEXHSTD) {
 						SETERROR(INFLT_EINPUTEND);
-						return INFLT_ERROR;
+						goto L_ERROR;
 					}
 					return r;
 				}
@@ -832,13 +867,14 @@ L_ERROR:
 	if (state->error == 0) {
 		SETERROR(INFLT_EBADSTATE);
 	}
+	SETSTATE(0xDEADBEEF);
 	return INFLT_ERROR;
 }
 
 void
 inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
 {
-	CTB_ASSERT(state && dict);
+	CTB_ASSERT(state && dict && size);
 
 	if (PRVT->used) {
 		SETERROR(INFLT_EINCORRECTUSE);
@@ -1129,9 +1165,9 @@ L_STATE2:
 #undef scindex
 
 
-#define slength   PRVT->aux0
-#define sbextra   PRVT->aux1
-#define sdistance PRVT->aux2
+#define slength PRVT->aux0
+#define soffset PRVT->aux1
+#define sextra  PRVT->aux2
 
 #if defined(CTB_ENV64)
 	#define PLATFORMWORDSIZE 8
@@ -1140,7 +1176,7 @@ L_STATE2:
 #endif
 
 static uintxx
-copybytes(struct TInflator* state, uintxx distance, uintxx length)
+copybytes(struct TInflator* state)
 {
 	uint8* buffer;
 	uint8* target;
@@ -1155,16 +1191,11 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 	do {
 		if (CTB_EXPECT0(rmnng == 0)) {
 			state->target = target;
-			updatewindow(state);
-			slength   = length;
-			sdistance = distance;
-
-			PRVT->substate = 4;
 			return INFLT_TGTEXHSTD;
 		}
 
-		if (distance > total) {
-			maxrun = distance - total;
+		if (soffset > total) {
+			maxrun = soffset - total;
 			if (CTB_EXPECT0(maxrun > PRVT->wndwcnt)) {
 				SETERROR(INFLT_EFAROFFSET);
 				return INFLT_ERROR;
@@ -1173,28 +1204,28 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 			buffer = PRVT->wndwbuffer;
 			if (maxrun > PRVT->wndwend) {
 				maxrun -= PRVT->wndwend;
-				buffer += PRVT->wndwsize - maxrun;
+				buffer += WNDWSIZE - maxrun;
 			}
 			else {
 				buffer += PRVT->wndwend - maxrun;
 			}
 
-			if (maxrun > length)
-				maxrun = length;
+			if (maxrun > slength)
+				maxrun = slength;
 		}
 		else {
-			buffer = target - distance;
-			maxrun = length;
+			buffer = target - soffset;
+			maxrun = slength;
 		}
 
 		if (maxrun > rmnng)
 			maxrun = rmnng;
-		length -= maxrun;
+		slength -= maxrun;
 
 		total += maxrun;
 		rmnng -= maxrun;
 
-		if (distance >= PLATFORMWORDSIZE) {
+		if (soffset >= PLATFORMWORDSIZE) {
 			for (;maxrun > 8; maxrun -= 8) {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
 				((uint32*) target)[0] = ((uint32*) buffer)[0];
@@ -1218,7 +1249,7 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 		do {
 			*target++ = *buffer++;
 		} while (--maxrun);
-	} while (length);
+	} while (slength);
 
 	state->target = target;
 	return 0;
@@ -1254,7 +1285,7 @@ copybytes(struct TInflator* state, uintxx distance, uintxx length)
 #define DROPBITS(BB, BC, N) (((BB) = (BB) >> (N)), ((BC) -= (N)))
 
 
-#define FASTSRCLEFT 15
+#define FASTSRCLEFT  15
 #define FASTTGTLEFT 266
 
 static uintxx decodefast(struct TInflator* state);
@@ -1262,25 +1293,16 @@ static uintxx decodefast(struct TInflator* state);
 static uintxx
 decodeblock(struct TInflator* state)
 {
-	uintxx r;
-	uintxx length;
-	uintxx distance;
-	uintxx bextra;
-	uintxx fastcheck;
 	bitbuffer bb;
-	uintxx bc;
+	uintxx bc;  /* bit count */
+    uintxx or;  /* bit overread count */
+	uintxx r;
+	uintxx fastcheck;
 	uint32 e;
-	uint32* ltable;
-	uint32* dtable;
-
-	length   = slength;
-	bextra   = sbextra;
-	distance = sdistance;
 
 	bb = PRVT->bbuffer;
 	bc = PRVT->bcount;
-	ltable = PRVT->ltable;
-	dtable = PRVT->dtable;
+    or = 0;
 
 	fastcheck = 1;
 	switch (PRVT->substate) {
@@ -1293,7 +1315,6 @@ decodeblock(struct TInflator* state)
 	}
 
 L_LOOP:
-	PRVT->substate = 0;
 	if (CTB_EXPECT0(fastcheck)) {
 		uintxx targetleft;
 		uintxx sourceleft;
@@ -1323,188 +1344,146 @@ L_LOOP:
 
 	for (; 15 > bc; bc += 8) {
 		if (state->source >= state->send) {
-			break;
+            or += 8;
+			continue;
 		}
 		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	if (bc >= 15) {
-		e = ltable[MASKBITS(bb, LROOTBITS)];
-		if (e & TAG_SUB) {
-			uintxx base;
+	e = PRVT->ltable[MASKBITS(bb, LROOTBITS)];
+	if (e & TAG_SUB) {
+		uintxx base;
 
-			base = e >> 0x10;
-			e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
-		}
-	}
-	else {
-		for (;;) {
-			e = ltable[MASKBITS(bb, LROOTBITS)];
-			if ((uint8) e <= bc) {
-				break;
-			}
-
-			if (state->source >= state->send) {
-				goto L_SRCEXHSTD;
-			}
-			bb |= ((bitbuffer) *state->source++) << bc;
-			bc += 8;
-		}
-
-		if (e & TAG_SUB) {
-			uintxx base;
-
-			base = e >> 0x10;
-			for (;;) {
-				e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
-				if ((uint8) e <= bc) {
-					break;
-				}
-
-				if (state->source >= state->send) {
-					goto L_SRCEXHSTD;
-				}
-				bb |= ((bitbuffer) *state->source++) << bc;
-				bc += 8;
-			}
-		}
+		base = e >> 0x10;
+		e = PRVT->ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
 	}
 
-	if (e & TAG_LIT) {
+	if (or) {
+		bc -= or;
+		if (bc < (uint8) e) {
+			PRVT->substate = 0;
+			goto L_SRCEXHSTD;
+		}
+		or = 0;
+	}
+
+	if (CTB_EXPECT1(e & TAG_LIT)) {
 		if (state->tend > state->target) {
 			*state->target++ = (uint8) (e >> 0x10);
 		}
 		else {
-			updatewindow(state);
 			PRVT->bbuffer = bb;
 			PRVT->bcount  = bc;
 
+            PRVT->substate = 0;
 			return INFLT_TGTEXHSTD;
 		}
 		DROPBITS(bb, bc, (uint8) e);
 		goto L_LOOP;
 	}
-	else {
-		if (e & TAG_END) {
-			DROPBITS(bb, bc, (uint8) e);
 
-			PRVT->bbuffer = bb;
-			PRVT->bcount  = bc;
-			return 0;
-		}
+	if (CTB_EXPECT0(e & TAG_END)) {
+		DROPBITS(bb, bc, (uint8) e);
+		PRVT->bbuffer = bb;
+		PRVT->bcount  = bc;
+
+        PRVT->substate = 0;
+		return 0;
 	}
 
+	if (CTB_EXPECT0((uint8) e) == 0) {
+		SETERROR(INFLT_EBADCODE);
+		PRVT->bbuffer = bb;
+		PRVT->bcount  = bc;
+		return INFLT_ERROR;
+	}
 	DROPBITS(bb, bc, (uint8) e);
-	length = (e >> 0x10);
-	bextra = (e >> 0x08) & 0x0f;
 
-	PRVT->substate++;
+	slength = (e >> 0x10);
+	sextra  = (e >> 0x08) & 0x0f;
 
 L_STATE1:
-	for (; bextra > bc; bc += 8) {
+	for (; sextra > bc; bc += 8) {
 		if (state->source >= state->send) {
+            PRVT->substate = 1;
 			goto L_SRCEXHSTD;
 		}
 		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	length += MASKBITS(bb, bextra);
-	DROPBITS(bb, bc, bextra);
-
-	PRVT->substate++;
+	slength += MASKBITS(bb, sextra);
+	DROPBITS(bb, bc, sextra);
 
 L_STATE2:
 	/* decode distance */
 	for (; 15 > bc; bc += 8) {
 		if (state->source >= state->send) {
-			break;
+            or += 8;
+			continue;
 		}
 		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	if (bc >= 15) {
-		e = dtable[MASKBITS(bb, DROOTBITS)];
-		if (CTB_EXPECT1(e & TAG_SUB)) {
-			uintxx base;
+	e = PRVT->dtable[MASKBITS(bb, DROOTBITS)];
+	if (CTB_EXPECT1(e & TAG_SUB)) {
+		uintxx base;
 
-			base = e >> 0x10;
-			e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
-		}
-	}
-	else {
-		for (;;) {
-			e = dtable[MASKBITS(bb, DROOTBITS)];
-			if ((uint8) e <= bc) {
-				break;
-			}
-
-			if (state->source >= state->send) {
-				goto L_SRCEXHSTD;
-			}
-			bb |= ((bitbuffer) *state->source++) << bc;
-			bc += 8;
-		}
-
-		if (e & TAG_SUB) {
-			uintxx base;
-
-			base = e >> 0x10;
-			for (;;) {
-				e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
-				if ((uint8) e <= bc) {
-					break;
-				}
-
-				if (state->source >= state->send) {
-					goto L_SRCEXHSTD;
-				}
-				bb |= ((bitbuffer) *state->source++) << bc;
-				bc += 8;
-			}
-		}
+		base = e >> 0x10;
+		e = PRVT->dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
 	}
 
-	if ((uint8) e == 0) {
+	if (or) {
+		bc -= or;
+		if (bc < (uint8) e) {
+			PRVT->substate = 2;
+			goto L_SRCEXHSTD;
+		}
+		or = 0;
+	}
+
+	if (CTB_EXPECT0((uint8) e) == 0) {
 		SETERROR(INFLT_EBADCODE);
+		PRVT->bbuffer = bb;
+		PRVT->bcount  = bc;
 		return INFLT_ERROR;
 	}
-
 	DROPBITS(bb, bc, (uint8) e);
-	distance = (e >> 0x10);
-	bextra   = (e >> 0x08) & 0x0f;
 
-	PRVT->substate++;
+	soffset = (e >> 0x10);
+	sextra  = (e >> 0x08) & 0x0f;
 
 L_STATE3:
-	for (; bextra > bc; bc += 8) {
+	for (; sextra > bc; bc += 8) {
 		if (state->source >= state->send) {
+			PRVT->substate = 3;
 			goto L_SRCEXHSTD;
 		}
 		bb |= ((bitbuffer) *state->source++) << bc;
 	}
 
-	distance += MASKBITS(bb, bextra);
-	DROPBITS(bb, bc, bextra);
+	soffset += MASKBITS(bb, sextra);
+	DROPBITS(bb, bc, sextra);
 
 L_STATE4:
-	r = copybytes(state, distance, length);
+	r = copybytes(state);
 	if (r) {
 		PRVT->bbuffer = bb;
 		PRVT->bcount  = bc;
+
+		PRVT->substate = 4;
 		return r;
 	}
 	goto L_LOOP;
 
 L_SRCEXHSTD:
-	updatewindow(state);
-	slength   = length;
-	sdistance = distance;
-	sbextra   = bextra;
-
 	PRVT->bbuffer = bb;
 	PRVT->bcount  = bc;
 	return INFLT_SRCEXHSTD;
 }
+
+#undef slength
+#undef soffset
+#undef sextra
 
 #if defined(__MSVC__)
 	#pragma warning(pop)
@@ -1538,6 +1517,13 @@ decodefast(struct TInflator* state)
 
 	r = 0;
 	do {
+		uintxx length;
+		uintxx offset;
+		uintxx extra;
+		uintxx targetbytes;
+		uintxx maxrun;
+		uint8* buffer;
+
 		bb |= LOAD64(source) << bc;
 		source = (source + 7) - ((bc >> 3) & 0x07);
 		bc |= 56;
@@ -1557,59 +1543,95 @@ decodefast(struct TInflator* state)
 			}
 		}
 
-L_L1:
+		if (CTB_EXPECT0(e & TAG_SUB)) {
+			uintxx base;
+
+			base = e >> 0x10;
+			e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
+		}
+
 		if (CTB_EXPECT1(e & TAG_LIT)) {
 			*target++ = (uint8) (e >> 0x10);
 
 			DROPBITS(bb, bc, (uint8) e);
 			continue;
 		}
-
-		if (CTB_EXPECT1((e & TAG_NON) == 0)) {
-			uintxx extra;
-			uintxx length;
-			uintxx distance;
-			uintxx targetbytes;
-			uintxx maxrun;
-			uint8* buffer;
-
-			/* length */
-			DROPBITS(bb, bc, (uint8) e);
-
-			extra  = (e >> 0x08) & 0x0f;
-			length = (e >> 0x10) + MASKBITS(bb, extra);
-			DROPBITS(bb, bc, extra);
-
-			/* distance */
-			e = dtable[MASKBITS(bb, DROOTBITS)];
-			if (CTB_EXPECT0(e & TAG_SUB)) {
-				uintxx base;
-
-				base = e >> 0x10;
-				e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
+		else {
+			if (CTB_EXPECT0(e & TAG_END)) {
+				r = 256;
+				DROPBITS(bb, bc, (uint8) e);
+				break;
 			}
+		}
 
-			DROPBITS(bb, bc, (uint8) e);
+		/* length */
+		if (CTB_EXPECT0((uint8) e) == 0) {
+			SETERROR(INFLT_EBADCODE);
+			r = INFLT_ERROR;
+			break;
+		}
+		DROPBITS(bb, bc, (uint8) e);
 
-			if (bc < 13) {
-				bb |= LOAD64(source) << bc;
-				source = (source + 7) - ((bc >> 3) & 0x07);
-				bc |= 56;
-			}
+		extra  = (e >> 0x08) & 0x0f;
+		length = (e >> 0x10) + MASKBITS(bb, extra);
+		DROPBITS(bb, bc, extra);
 
-			extra    = (e >> 0x08) & 0x0f;
-			distance = (e >> 0x10) + MASKBITS(bb, extra);
-			DROPBITS(bb, bc, extra);
+		/* distance */
+		e = dtable[MASKBITS(bb, DROOTBITS)];
+		if (CTB_EXPECT0(e & TAG_SUB)) {
+			uintxx base;
 
-			targetbytes = (uintxx) (target - state->tbgn);
-			if (CTB_EXPECT0(distance < targetbytes)) {
-				uint8* end;
+			base = e >> 0x10;
+			e = dtable[base + (MASKBITS(bb, (uint8) e) >> DROOTBITS)];
+		}
 
-				buffer = target - distance;
-				maxrun = length;
-				end = target + maxrun;
+		if (CTB_EXPECT0((uint8) e) == 0) {
+			SETERROR(INFLT_EBADCODE);
+			r = INFLT_ERROR;
+			break;
+		}
+		DROPBITS(bb, bc, (uint8) e);
 
-				if (CTB_EXPECT1(distance >= PLATFORMWORDSIZE)) {
+		if (bc < 13) {
+			bb |= LOAD64(source) << bc;
+			source = (source + 7) - ((bc >> 3) & 0x07);
+			bc |= 56;
+		}
+
+		extra  = (e >> 0x08) & 0x0f;
+		offset = (e >> 0x10) + MASKBITS(bb, extra);
+		DROPBITS(bb, bc, extra);
+
+		targetbytes = (uintxx) (target - state->tbgn);
+		if (CTB_EXPECT0(offset < targetbytes)) {
+			uint8* end;
+
+			buffer = target - offset;
+			maxrun = length;
+			end = target + maxrun;
+
+			if (CTB_EXPECT1(offset >= PLATFORMWORDSIZE)) {
+#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
+#if defined(CTB_ENV64)
+				((uint64*) target)[0] = ((uint64*) buffer)[0];
+				((uint64*) target)[1] = ((uint64*) buffer)[1];
+				target += 16;
+				buffer += 16;
+#else
+				((uint32*) target)[0] = ((uint32*) buffer)[0];
+				((uint32*) target)[1] = ((uint32*) buffer)[1];
+				target += 8;
+				buffer += 8;
+#endif
+#else
+				target[0] = buffer[0];
+				target[1] = buffer[1];
+				target[2] = buffer[2];
+				target[3] = buffer[3];
+				target += 4;
+				buffer += 4;
+#endif
+				do {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
 #if defined(CTB_ENV64)
 					((uint64*) target)[0] = ((uint64*) buffer)[0];
@@ -1630,115 +1652,74 @@ L_L1:
 					target += 4;
 					buffer += 4;
 #endif
-					do {
+				} while (target < end);
+				target = end;
+			}
+			else {
+				*target++ = *buffer++;
+				*target++ = *buffer++;
+				do {
+					*target++ = *buffer++;
+				} while (target < end);
+			}
+		}
+		else {
+			maxrun = targetbytes;
+			do {
+				if (CTB_EXPECT0(offset > maxrun)) {
+					maxrun = offset - maxrun;
+					if (CTB_EXPECT0(maxrun > PRVT->wndwcnt)) {
+						SETERROR(INFLT_EFAROFFSET);
+						return INFLT_ERROR;
+					}
+
+					buffer = PRVT->wndwbuffer;
+					if (maxrun > PRVT->wndwend) {
+						maxrun -= PRVT->wndwend;
+						buffer += WNDWSIZE - maxrun;
+					}
+					else {
+						buffer += PRVT->wndwend - maxrun;
+					}
+
+					if (maxrun > length)
+						maxrun = length;
+				}
+				else {
+					buffer = target - offset;
+					maxrun = length;
+				}
+
+				length -= maxrun;
+				if (CTB_EXPECT1(offset >= PLATFORMWORDSIZE)) {
+					for (;maxrun > 8; maxrun -= 8) {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
 #if defined(CTB_ENV64)
 						((uint64*) target)[0] = ((uint64*) buffer)[0];
-						((uint64*) target)[1] = ((uint64*) buffer)[1];
-						target += 16;
-						buffer += 16;
 #else
 						((uint32*) target)[0] = ((uint32*) buffer)[0];
 						((uint32*) target)[1] = ((uint32*) buffer)[1];
-						target += 8;
-						buffer += 8;
 #endif
 #else
 						target[0] = buffer[0];
 						target[1] = buffer[1];
 						target[2] = buffer[2];
 						target[3] = buffer[3];
-						target += 4;
-						buffer += 4;
+						target[4] = buffer[4];
+						target[5] = buffer[5];
+						target[6] = buffer[6];
+						target[7] = buffer[7];
 #endif
-					} while (target < end);
-					target = end;
+						target += 8;
+						buffer += 8;
+					}
 				}
-				else {
-					*target++ = *buffer++;
-					*target++ = *buffer++;
-					do {
-						*target++ = *buffer++;
-					} while (target < end);
-				}
-			}
-			else {
-				maxrun = targetbytes;
+
 				do {
-					if (CTB_EXPECT0(distance > maxrun)) {
-						maxrun = distance - maxrun;
-						if (CTB_EXPECT0(maxrun > PRVT->wndwcnt)) {
-							SETERROR(INFLT_EFAROFFSET);
-							return INFLT_ERROR;
-						}
-
-						buffer = PRVT->wndwbuffer;
-						if (maxrun > PRVT->wndwend) {
-							maxrun -= PRVT->wndwend;
-							buffer += PRVT->wndwsize - maxrun;
-						}
-						else {
-							buffer += PRVT->wndwend - maxrun;
-						}
-
-						if (maxrun > length)
-							maxrun = length;
-					}
-					else {
-						buffer = target - distance;
-						maxrun = length;
-					}
-
-					length -= maxrun;
-					if (CTB_EXPECT1(distance >= PLATFORMWORDSIZE)) {
-						for (;maxrun > 8; maxrun -= 8) {
-#if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-#if defined(CTB_ENV64)
-							((uint64*) target)[0] = ((uint64*) buffer)[0];
-#else
-							((uint32*) target)[0] = ((uint32*) buffer)[0];
-							((uint32*) target)[1] = ((uint32*) buffer)[1];
-#endif
-#else
-							target[0] = buffer[0];
-							target[1] = buffer[1];
-							target[2] = buffer[2];
-							target[3] = buffer[3];
-							target[4] = buffer[4];
-							target[5] = buffer[5];
-							target[6] = buffer[6];
-							target[7] = buffer[7];
-#endif
-							target += 8;
-							buffer += 8;
-						}
-					}
-
-					do {
-						*target++ = *buffer++;
-					} while (--maxrun);
-					maxrun = (uintxx) (target - state->tbgn);
-				} while (length);
-			}
-		}
-		else {
-			if (CTB_EXPECT1(e & TAG_SUB)) {
-				uintxx base;
-
-				base = e >> 0x10;
-				e = ltable[base + (MASKBITS(bb, (uint8) e) >> LROOTBITS)];
-				goto L_L1;
-			}
-			else {
-				if (CTB_EXPECT0(e & TAG_END)) {
-					r = 256;
-					DROPBITS(bb, bc, (uint8) e);
-					break;
-				}
-
-				SETERROR(INFLT_EBADCODE);
-				return INFLT_ERROR;
-			}
+					*target++ = *buffer++;
+				} while (--maxrun);
+				maxrun = (uintxx) (target - state->tbgn);
+			} while (length);
 		}
 	} while (tend > target && send > source);
 
@@ -1752,10 +1733,8 @@ L_L1:
 	return r;
 }
 
-#undef slength
-#undef sbextra
-#undef sdistance
-
+#undef PRVT
+#undef WNDWSIZE
 
 #else
 
@@ -1766,328 +1745,328 @@ L_L1:
 #if LROOTBITS == 10 && DROOTBITS == 8
 
 static const uint32 lsttctable[] = {
-	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
-	0x001f0207, 0x80700008, 0x80300008, 0x80c00009, 
-	0x000a0007, 0x80600008, 0x80200008, 0x80a00009, 
-	0x80000008, 0x80800008, 0x80400008, 0x80e00009, 
-	0x00060007, 0x80580008, 0x80180008, 0x80900009, 
-	0x003b0307, 0x80780008, 0x80380008, 0x80d00009, 
-	0x00110107, 0x80680008, 0x80280008, 0x80b00009, 
-	0x80080008, 0x80880008, 0x80480008, 0x80f00009, 
-	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
-	0x002b0307, 0x80740008, 0x80340008, 0x80c80009, 
-	0x000d0107, 0x80640008, 0x80240008, 0x80a80009, 
-	0x80040008, 0x80840008, 0x80440008, 0x80e80009, 
-	0x00080007, 0x805c0008, 0x801c0008, 0x80980009, 
-	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009, 
-	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009, 
-	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009, 
-	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
-	0x00230307, 0x80720008, 0x80320008, 0x80c40009, 
-	0x000b0107, 0x80620008, 0x80220008, 0x80a40009, 
-	0x80020008, 0x80820008, 0x80420008, 0x80e40009, 
-	0x00070007, 0x805a0008, 0x801a0008, 0x80940009, 
-	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009, 
-	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009, 
-	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009, 
-	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
-	0x00330307, 0x80760008, 0x80360008, 0x80cc0009, 
-	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009, 
-	0x80060008, 0x80860008, 0x80460008, 0x80ec0009, 
-	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009, 
-	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009, 
-	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009, 
-	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009, 
-	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
-	0x001f0207, 0x80710008, 0x80310008, 0x80c20009, 
-	0x000a0007, 0x80610008, 0x80210008, 0x80a20009, 
-	0x80010008, 0x80810008, 0x80410008, 0x80e20009, 
-	0x00060007, 0x80590008, 0x80190008, 0x80920009, 
-	0x003b0307, 0x80790008, 0x80390008, 0x80d20009, 
-	0x00110107, 0x80690008, 0x80290008, 0x80b20009, 
-	0x80090008, 0x80890008, 0x80490008, 0x80f20009, 
-	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
-	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009, 
-	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009, 
-	0x80050008, 0x80850008, 0x80450008, 0x80ea0009, 
-	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009, 
-	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009, 
-	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009, 
-	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009, 
-	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
-	0x00230307, 0x80730008, 0x80330008, 0x80c60009, 
-	0x000b0107, 0x80630008, 0x80230008, 0x80a60009, 
-	0x80030008, 0x80830008, 0x80430008, 0x80e60009, 
-	0x00070007, 0x805b0008, 0x801b0008, 0x80960009, 
-	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009, 
-	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009, 
-	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009, 
-	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
-	0x00330307, 0x80770008, 0x80370008, 0x80ce0009, 
-	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009, 
-	0x80070008, 0x80870008, 0x80470008, 0x80ee0009, 
-	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009, 
-	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009, 
-	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009, 
-	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009, 
-	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
-	0x001f0207, 0x80700008, 0x80300008, 0x80c10009, 
-	0x000a0007, 0x80600008, 0x80200008, 0x80a10009, 
-	0x80000008, 0x80800008, 0x80400008, 0x80e10009, 
-	0x00060007, 0x80580008, 0x80180008, 0x80910009, 
-	0x003b0307, 0x80780008, 0x80380008, 0x80d10009, 
-	0x00110107, 0x80680008, 0x80280008, 0x80b10009, 
-	0x80080008, 0x80880008, 0x80480008, 0x80f10009, 
-	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
-	0x002b0307, 0x80740008, 0x80340008, 0x80c90009, 
-	0x000d0107, 0x80640008, 0x80240008, 0x80a90009, 
-	0x80040008, 0x80840008, 0x80440008, 0x80e90009, 
-	0x00080007, 0x805c0008, 0x801c0008, 0x80990009, 
-	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009, 
-	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009, 
-	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009, 
-	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
-	0x00230307, 0x80720008, 0x80320008, 0x80c50009, 
-	0x000b0107, 0x80620008, 0x80220008, 0x80a50009, 
-	0x80020008, 0x80820008, 0x80420008, 0x80e50009, 
-	0x00070007, 0x805a0008, 0x801a0008, 0x80950009, 
-	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009, 
-	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009, 
-	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009, 
-	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
-	0x00330307, 0x80760008, 0x80360008, 0x80cd0009, 
-	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009, 
-	0x80060008, 0x80860008, 0x80460008, 0x80ed0009, 
-	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009, 
-	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009, 
-	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009, 
-	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009, 
-	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
-	0x001f0207, 0x80710008, 0x80310008, 0x80c30009, 
-	0x000a0007, 0x80610008, 0x80210008, 0x80a30009, 
-	0x80010008, 0x80810008, 0x80410008, 0x80e30009, 
-	0x00060007, 0x80590008, 0x80190008, 0x80930009, 
-	0x003b0307, 0x80790008, 0x80390008, 0x80d30009, 
-	0x00110107, 0x80690008, 0x80290008, 0x80b30009, 
-	0x80090008, 0x80890008, 0x80490008, 0x80f30009, 
-	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
-	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009, 
-	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009, 
-	0x80050008, 0x80850008, 0x80450008, 0x80eb0009, 
-	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009, 
-	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009, 
-	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009, 
-	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009, 
-	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
-	0x00230307, 0x80730008, 0x80330008, 0x80c70009, 
-	0x000b0107, 0x80630008, 0x80230008, 0x80a70009, 
-	0x80030008, 0x80830008, 0x80430008, 0x80e70009, 
-	0x00070007, 0x805b0008, 0x801b0008, 0x80970009, 
-	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009, 
-	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009, 
-	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009, 
-	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
-	0x00330307, 0x80770008, 0x80370008, 0x80cf0009, 
-	0x000f0107, 0x80670008, 0x80270008, 0x80af0009, 
-	0x80070008, 0x80870008, 0x80470008, 0x80ef0009, 
-	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009, 
-	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009, 
-	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009, 
-	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009, 
-	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
-	0x001f0207, 0x80700008, 0x80300008, 0x80c00009, 
-	0x000a0007, 0x80600008, 0x80200008, 0x80a00009, 
-	0x80000008, 0x80800008, 0x80400008, 0x80e00009, 
-	0x00060007, 0x80580008, 0x80180008, 0x80900009, 
-	0x003b0307, 0x80780008, 0x80380008, 0x80d00009, 
-	0x00110107, 0x80680008, 0x80280008, 0x80b00009, 
-	0x80080008, 0x80880008, 0x80480008, 0x80f00009, 
-	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
-	0x002b0307, 0x80740008, 0x80340008, 0x80c80009, 
-	0x000d0107, 0x80640008, 0x80240008, 0x80a80009, 
-	0x80040008, 0x80840008, 0x80440008, 0x80e80009, 
-	0x00080007, 0x805c0008, 0x801c0008, 0x80980009, 
-	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009, 
-	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009, 
-	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009, 
-	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
-	0x00230307, 0x80720008, 0x80320008, 0x80c40009, 
-	0x000b0107, 0x80620008, 0x80220008, 0x80a40009, 
-	0x80020008, 0x80820008, 0x80420008, 0x80e40009, 
-	0x00070007, 0x805a0008, 0x801a0008, 0x80940009, 
-	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009, 
-	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009, 
-	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009, 
-	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
-	0x00330307, 0x80760008, 0x80360008, 0x80cc0009, 
-	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009, 
-	0x80060008, 0x80860008, 0x80460008, 0x80ec0009, 
-	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009, 
-	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009, 
-	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009, 
-	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009, 
-	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
-	0x001f0207, 0x80710008, 0x80310008, 0x80c20009, 
-	0x000a0007, 0x80610008, 0x80210008, 0x80a20009, 
-	0x80010008, 0x80810008, 0x80410008, 0x80e20009, 
-	0x00060007, 0x80590008, 0x80190008, 0x80920009, 
-	0x003b0307, 0x80790008, 0x80390008, 0x80d20009, 
-	0x00110107, 0x80690008, 0x80290008, 0x80b20009, 
-	0x80090008, 0x80890008, 0x80490008, 0x80f20009, 
-	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
-	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009, 
-	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009, 
-	0x80050008, 0x80850008, 0x80450008, 0x80ea0009, 
-	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009, 
-	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009, 
-	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009, 
-	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009, 
-	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
-	0x00230307, 0x80730008, 0x80330008, 0x80c60009, 
-	0x000b0107, 0x80630008, 0x80230008, 0x80a60009, 
-	0x80030008, 0x80830008, 0x80430008, 0x80e60009, 
-	0x00070007, 0x805b0008, 0x801b0008, 0x80960009, 
-	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009, 
-	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009, 
-	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009, 
-	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
-	0x00330307, 0x80770008, 0x80370008, 0x80ce0009, 
-	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009, 
-	0x80070008, 0x80870008, 0x80470008, 0x80ee0009, 
-	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009, 
-	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009, 
-	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009, 
-	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009, 
-	0x0100c007, 0x80500008, 0x80100008, 0x00730408, 
-	0x001f0207, 0x80700008, 0x80300008, 0x80c10009, 
-	0x000a0007, 0x80600008, 0x80200008, 0x80a10009, 
-	0x80000008, 0x80800008, 0x80400008, 0x80e10009, 
-	0x00060007, 0x80580008, 0x80180008, 0x80910009, 
-	0x003b0307, 0x80780008, 0x80380008, 0x80d10009, 
-	0x00110107, 0x80680008, 0x80280008, 0x80b10009, 
-	0x80080008, 0x80880008, 0x80480008, 0x80f10009, 
-	0x00040007, 0x80540008, 0x80140008, 0x00e30508, 
-	0x002b0307, 0x80740008, 0x80340008, 0x80c90009, 
-	0x000d0107, 0x80640008, 0x80240008, 0x80a90009, 
-	0x80040008, 0x80840008, 0x80440008, 0x80e90009, 
-	0x00080007, 0x805c0008, 0x801c0008, 0x80990009, 
-	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009, 
-	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009, 
-	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009, 
-	0x00030007, 0x80520008, 0x80120008, 0x00a30508, 
-	0x00230307, 0x80720008, 0x80320008, 0x80c50009, 
-	0x000b0107, 0x80620008, 0x80220008, 0x80a50009, 
-	0x80020008, 0x80820008, 0x80420008, 0x80e50009, 
-	0x00070007, 0x805a0008, 0x801a0008, 0x80950009, 
-	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009, 
-	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009, 
-	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009, 
-	0x00050007, 0x80560008, 0x80160008, 0x00000008, 
-	0x00330307, 0x80760008, 0x80360008, 0x80cd0009, 
-	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009, 
-	0x80060008, 0x80860008, 0x80460008, 0x80ed0009, 
-	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009, 
-	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009, 
-	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009, 
-	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009, 
-	0x0100c007, 0x80510008, 0x80110008, 0x00830508, 
-	0x001f0207, 0x80710008, 0x80310008, 0x80c30009, 
-	0x000a0007, 0x80610008, 0x80210008, 0x80a30009, 
-	0x80010008, 0x80810008, 0x80410008, 0x80e30009, 
-	0x00060007, 0x80590008, 0x80190008, 0x80930009, 
-	0x003b0307, 0x80790008, 0x80390008, 0x80d30009, 
-	0x00110107, 0x80690008, 0x80290008, 0x80b30009, 
-	0x80090008, 0x80890008, 0x80490008, 0x80f30009, 
-	0x00040007, 0x80550008, 0x80150008, 0x01020008, 
-	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009, 
-	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009, 
-	0x80050008, 0x80850008, 0x80450008, 0x80eb0009, 
-	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009, 
-	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009, 
-	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009, 
-	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009, 
-	0x00030007, 0x80530008, 0x80130008, 0x00c30508, 
-	0x00230307, 0x80730008, 0x80330008, 0x80c70009, 
-	0x000b0107, 0x80630008, 0x80230008, 0x80a70009, 
-	0x80030008, 0x80830008, 0x80430008, 0x80e70009, 
-	0x00070007, 0x805b0008, 0x801b0008, 0x80970009, 
-	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009, 
-	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009, 
-	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009, 
-	0x00050007, 0x80570008, 0x80170008, 0x00000008, 
-	0x00330307, 0x80770008, 0x80370008, 0x80cf0009, 
-	0x000f0107, 0x80670008, 0x80270008, 0x80af0009, 
-	0x80070008, 0x80870008, 0x80470008, 0x80ef0009, 
-	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009, 
-	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009, 
-	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009, 
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408,
+	0x001f0207, 0x80700008, 0x80300008, 0x80c00009,
+	0x000a0007, 0x80600008, 0x80200008, 0x80a00009,
+	0x80000008, 0x80800008, 0x80400008, 0x80e00009,
+	0x00060007, 0x80580008, 0x80180008, 0x80900009,
+	0x003b0307, 0x80780008, 0x80380008, 0x80d00009,
+	0x00110107, 0x80680008, 0x80280008, 0x80b00009,
+	0x80080008, 0x80880008, 0x80480008, 0x80f00009,
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508,
+	0x002b0307, 0x80740008, 0x80340008, 0x80c80009,
+	0x000d0107, 0x80640008, 0x80240008, 0x80a80009,
+	0x80040008, 0x80840008, 0x80440008, 0x80e80009,
+	0x00080007, 0x805c0008, 0x801c0008, 0x80980009,
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009,
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009,
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009,
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508,
+	0x00230307, 0x80720008, 0x80320008, 0x80c40009,
+	0x000b0107, 0x80620008, 0x80220008, 0x80a40009,
+	0x80020008, 0x80820008, 0x80420008, 0x80e40009,
+	0x00070007, 0x805a0008, 0x801a0008, 0x80940009,
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009,
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009,
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009,
+	0x00050007, 0x80560008, 0x80160008, 0x00000008,
+	0x00330307, 0x80760008, 0x80360008, 0x80cc0009,
+	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009,
+	0x80060008, 0x80860008, 0x80460008, 0x80ec0009,
+	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009,
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009,
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009,
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009,
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508,
+	0x001f0207, 0x80710008, 0x80310008, 0x80c20009,
+	0x000a0007, 0x80610008, 0x80210008, 0x80a20009,
+	0x80010008, 0x80810008, 0x80410008, 0x80e20009,
+	0x00060007, 0x80590008, 0x80190008, 0x80920009,
+	0x003b0307, 0x80790008, 0x80390008, 0x80d20009,
+	0x00110107, 0x80690008, 0x80290008, 0x80b20009,
+	0x80090008, 0x80890008, 0x80490008, 0x80f20009,
+	0x00040007, 0x80550008, 0x80150008, 0x01020008,
+	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009,
+	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009,
+	0x80050008, 0x80850008, 0x80450008, 0x80ea0009,
+	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009,
+	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009,
+	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009,
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009,
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508,
+	0x00230307, 0x80730008, 0x80330008, 0x80c60009,
+	0x000b0107, 0x80630008, 0x80230008, 0x80a60009,
+	0x80030008, 0x80830008, 0x80430008, 0x80e60009,
+	0x00070007, 0x805b0008, 0x801b0008, 0x80960009,
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009,
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009,
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009,
+	0x00050007, 0x80570008, 0x80170008, 0x00000008,
+	0x00330307, 0x80770008, 0x80370008, 0x80ce0009,
+	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009,
+	0x80070008, 0x80870008, 0x80470008, 0x80ee0009,
+	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009,
+	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009,
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009,
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009,
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408,
+	0x001f0207, 0x80700008, 0x80300008, 0x80c10009,
+	0x000a0007, 0x80600008, 0x80200008, 0x80a10009,
+	0x80000008, 0x80800008, 0x80400008, 0x80e10009,
+	0x00060007, 0x80580008, 0x80180008, 0x80910009,
+	0x003b0307, 0x80780008, 0x80380008, 0x80d10009,
+	0x00110107, 0x80680008, 0x80280008, 0x80b10009,
+	0x80080008, 0x80880008, 0x80480008, 0x80f10009,
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508,
+	0x002b0307, 0x80740008, 0x80340008, 0x80c90009,
+	0x000d0107, 0x80640008, 0x80240008, 0x80a90009,
+	0x80040008, 0x80840008, 0x80440008, 0x80e90009,
+	0x00080007, 0x805c0008, 0x801c0008, 0x80990009,
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009,
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009,
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009,
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508,
+	0x00230307, 0x80720008, 0x80320008, 0x80c50009,
+	0x000b0107, 0x80620008, 0x80220008, 0x80a50009,
+	0x80020008, 0x80820008, 0x80420008, 0x80e50009,
+	0x00070007, 0x805a0008, 0x801a0008, 0x80950009,
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009,
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009,
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009,
+	0x00050007, 0x80560008, 0x80160008, 0x00000008,
+	0x00330307, 0x80760008, 0x80360008, 0x80cd0009,
+	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009,
+	0x80060008, 0x80860008, 0x80460008, 0x80ed0009,
+	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009,
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009,
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009,
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009,
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508,
+	0x001f0207, 0x80710008, 0x80310008, 0x80c30009,
+	0x000a0007, 0x80610008, 0x80210008, 0x80a30009,
+	0x80010008, 0x80810008, 0x80410008, 0x80e30009,
+	0x00060007, 0x80590008, 0x80190008, 0x80930009,
+	0x003b0307, 0x80790008, 0x80390008, 0x80d30009,
+	0x00110107, 0x80690008, 0x80290008, 0x80b30009,
+	0x80090008, 0x80890008, 0x80490008, 0x80f30009,
+	0x00040007, 0x80550008, 0x80150008, 0x01020008,
+	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009,
+	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009,
+	0x80050008, 0x80850008, 0x80450008, 0x80eb0009,
+	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009,
+	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009,
+	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009,
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009,
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508,
+	0x00230307, 0x80730008, 0x80330008, 0x80c70009,
+	0x000b0107, 0x80630008, 0x80230008, 0x80a70009,
+	0x80030008, 0x80830008, 0x80430008, 0x80e70009,
+	0x00070007, 0x805b0008, 0x801b0008, 0x80970009,
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009,
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009,
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009,
+	0x00050007, 0x80570008, 0x80170008, 0x00000008,
+	0x00330307, 0x80770008, 0x80370008, 0x80cf0009,
+	0x000f0107, 0x80670008, 0x80270008, 0x80af0009,
+	0x80070008, 0x80870008, 0x80470008, 0x80ef0009,
+	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009,
+	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009,
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009,
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009,
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408,
+	0x001f0207, 0x80700008, 0x80300008, 0x80c00009,
+	0x000a0007, 0x80600008, 0x80200008, 0x80a00009,
+	0x80000008, 0x80800008, 0x80400008, 0x80e00009,
+	0x00060007, 0x80580008, 0x80180008, 0x80900009,
+	0x003b0307, 0x80780008, 0x80380008, 0x80d00009,
+	0x00110107, 0x80680008, 0x80280008, 0x80b00009,
+	0x80080008, 0x80880008, 0x80480008, 0x80f00009,
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508,
+	0x002b0307, 0x80740008, 0x80340008, 0x80c80009,
+	0x000d0107, 0x80640008, 0x80240008, 0x80a80009,
+	0x80040008, 0x80840008, 0x80440008, 0x80e80009,
+	0x00080007, 0x805c0008, 0x801c0008, 0x80980009,
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d80009,
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b80009,
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f80009,
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508,
+	0x00230307, 0x80720008, 0x80320008, 0x80c40009,
+	0x000b0107, 0x80620008, 0x80220008, 0x80a40009,
+	0x80020008, 0x80820008, 0x80420008, 0x80e40009,
+	0x00070007, 0x805a0008, 0x801a0008, 0x80940009,
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d40009,
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b40009,
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f40009,
+	0x00050007, 0x80560008, 0x80160008, 0x00000008,
+	0x00330307, 0x80760008, 0x80360008, 0x80cc0009,
+	0x000f0107, 0x80660008, 0x80260008, 0x80ac0009,
+	0x80060008, 0x80860008, 0x80460008, 0x80ec0009,
+	0x00090007, 0x805e0008, 0x801e0008, 0x809c0009,
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dc0009,
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bc0009,
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fc0009,
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508,
+	0x001f0207, 0x80710008, 0x80310008, 0x80c20009,
+	0x000a0007, 0x80610008, 0x80210008, 0x80a20009,
+	0x80010008, 0x80810008, 0x80410008, 0x80e20009,
+	0x00060007, 0x80590008, 0x80190008, 0x80920009,
+	0x003b0307, 0x80790008, 0x80390008, 0x80d20009,
+	0x00110107, 0x80690008, 0x80290008, 0x80b20009,
+	0x80090008, 0x80890008, 0x80490008, 0x80f20009,
+	0x00040007, 0x80550008, 0x80150008, 0x01020008,
+	0x002b0307, 0x80750008, 0x80350008, 0x80ca0009,
+	0x000d0107, 0x80650008, 0x80250008, 0x80aa0009,
+	0x80050008, 0x80850008, 0x80450008, 0x80ea0009,
+	0x00080007, 0x805d0008, 0x801d0008, 0x809a0009,
+	0x00530407, 0x807d0008, 0x803d0008, 0x80da0009,
+	0x00170207, 0x806d0008, 0x802d0008, 0x80ba0009,
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fa0009,
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508,
+	0x00230307, 0x80730008, 0x80330008, 0x80c60009,
+	0x000b0107, 0x80630008, 0x80230008, 0x80a60009,
+	0x80030008, 0x80830008, 0x80430008, 0x80e60009,
+	0x00070007, 0x805b0008, 0x801b0008, 0x80960009,
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d60009,
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b60009,
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f60009,
+	0x00050007, 0x80570008, 0x80170008, 0x00000008,
+	0x00330307, 0x80770008, 0x80370008, 0x80ce0009,
+	0x000f0107, 0x80670008, 0x80270008, 0x80ae0009,
+	0x80070008, 0x80870008, 0x80470008, 0x80ee0009,
+	0x00090007, 0x805f0008, 0x801f0008, 0x809e0009,
+	0x00630407, 0x807f0008, 0x803f0008, 0x80de0009,
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80be0009,
+	0x800f0008, 0x808f0008, 0x804f0008, 0x80fe0009,
+	0x0100c007, 0x80500008, 0x80100008, 0x00730408,
+	0x001f0207, 0x80700008, 0x80300008, 0x80c10009,
+	0x000a0007, 0x80600008, 0x80200008, 0x80a10009,
+	0x80000008, 0x80800008, 0x80400008, 0x80e10009,
+	0x00060007, 0x80580008, 0x80180008, 0x80910009,
+	0x003b0307, 0x80780008, 0x80380008, 0x80d10009,
+	0x00110107, 0x80680008, 0x80280008, 0x80b10009,
+	0x80080008, 0x80880008, 0x80480008, 0x80f10009,
+	0x00040007, 0x80540008, 0x80140008, 0x00e30508,
+	0x002b0307, 0x80740008, 0x80340008, 0x80c90009,
+	0x000d0107, 0x80640008, 0x80240008, 0x80a90009,
+	0x80040008, 0x80840008, 0x80440008, 0x80e90009,
+	0x00080007, 0x805c0008, 0x801c0008, 0x80990009,
+	0x00530407, 0x807c0008, 0x803c0008, 0x80d90009,
+	0x00170207, 0x806c0008, 0x802c0008, 0x80b90009,
+	0x800c0008, 0x808c0008, 0x804c0008, 0x80f90009,
+	0x00030007, 0x80520008, 0x80120008, 0x00a30508,
+	0x00230307, 0x80720008, 0x80320008, 0x80c50009,
+	0x000b0107, 0x80620008, 0x80220008, 0x80a50009,
+	0x80020008, 0x80820008, 0x80420008, 0x80e50009,
+	0x00070007, 0x805a0008, 0x801a0008, 0x80950009,
+	0x00430407, 0x807a0008, 0x803a0008, 0x80d50009,
+	0x00130207, 0x806a0008, 0x802a0008, 0x80b50009,
+	0x800a0008, 0x808a0008, 0x804a0008, 0x80f50009,
+	0x00050007, 0x80560008, 0x80160008, 0x00000008,
+	0x00330307, 0x80760008, 0x80360008, 0x80cd0009,
+	0x000f0107, 0x80660008, 0x80260008, 0x80ad0009,
+	0x80060008, 0x80860008, 0x80460008, 0x80ed0009,
+	0x00090007, 0x805e0008, 0x801e0008, 0x809d0009,
+	0x00630407, 0x807e0008, 0x803e0008, 0x80dd0009,
+	0x001b0207, 0x806e0008, 0x802e0008, 0x80bd0009,
+	0x800e0008, 0x808e0008, 0x804e0008, 0x80fd0009,
+	0x0100c007, 0x80510008, 0x80110008, 0x00830508,
+	0x001f0207, 0x80710008, 0x80310008, 0x80c30009,
+	0x000a0007, 0x80610008, 0x80210008, 0x80a30009,
+	0x80010008, 0x80810008, 0x80410008, 0x80e30009,
+	0x00060007, 0x80590008, 0x80190008, 0x80930009,
+	0x003b0307, 0x80790008, 0x80390008, 0x80d30009,
+	0x00110107, 0x80690008, 0x80290008, 0x80b30009,
+	0x80090008, 0x80890008, 0x80490008, 0x80f30009,
+	0x00040007, 0x80550008, 0x80150008, 0x01020008,
+	0x002b0307, 0x80750008, 0x80350008, 0x80cb0009,
+	0x000d0107, 0x80650008, 0x80250008, 0x80ab0009,
+	0x80050008, 0x80850008, 0x80450008, 0x80eb0009,
+	0x00080007, 0x805d0008, 0x801d0008, 0x809b0009,
+	0x00530407, 0x807d0008, 0x803d0008, 0x80db0009,
+	0x00170207, 0x806d0008, 0x802d0008, 0x80bb0009,
+	0x800d0008, 0x808d0008, 0x804d0008, 0x80fb0009,
+	0x00030007, 0x80530008, 0x80130008, 0x00c30508,
+	0x00230307, 0x80730008, 0x80330008, 0x80c70009,
+	0x000b0107, 0x80630008, 0x80230008, 0x80a70009,
+	0x80030008, 0x80830008, 0x80430008, 0x80e70009,
+	0x00070007, 0x805b0008, 0x801b0008, 0x80970009,
+	0x00430407, 0x807b0008, 0x803b0008, 0x80d70009,
+	0x00130207, 0x806b0008, 0x802b0008, 0x80b70009,
+	0x800b0008, 0x808b0008, 0x804b0008, 0x80f70009,
+	0x00050007, 0x80570008, 0x80170008, 0x00000008,
+	0x00330307, 0x80770008, 0x80370008, 0x80cf0009,
+	0x000f0107, 0x80670008, 0x80270008, 0x80af0009,
+	0x80070008, 0x80870008, 0x80470008, 0x80ef0009,
+	0x00090007, 0x805f0008, 0x801f0008, 0x809f0009,
+	0x00630407, 0x807f0008, 0x803f0008, 0x80df0009,
+	0x001b0207, 0x806f0008, 0x802f0008, 0x80bf0009,
 	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009
 };
 
 static const uint32 dsttctable[] = {
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
-	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025, 
-	0x00010005, 0x01010705, 0x00110305, 0x10010b05, 
-	0x00050105, 0x04010905, 0x00410505, 0x40010d05, 
-	0x00030005, 0x02010805, 0x00210405, 0x20010c05, 
-	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f, 
-	0x00020005, 0x01810705, 0x00190305, 0x18010b05, 
-	0x00070105, 0x06010905, 0x00610505, 0x60010d05, 
-	0x00040005, 0x03010805, 0x00310405, 0x30010c05, 
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
+	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025,
+	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
+	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
+	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
+	0x00090205, 0x08010a05, 0x00810605, 0x3d3d206f,
+	0x00020005, 0x01810705, 0x00190305, 0x18010b05,
+	0x00070105, 0x06010905, 0x00610505, 0x60010d05,
+	0x00040005, 0x03010805, 0x00310405, 0x30010c05,
 	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025
 };
 
