@@ -533,7 +533,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 				if (entry[0] & TAG_SUB) {
 					continue;
 				}
-				entry[0] = TAG_SUB | (offset << 16) | (mbits + r);
+				entry[0] = (uint32) (TAG_SUB | (offset << 16) | (mbits + r));
 
 				code = reverseinc(code, mbits);
 				offset += (uintxx) 1 << r;
@@ -563,7 +563,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 			}
 		}
 		else {
-			e = symbol << 16;
+			e = (uint32) symbol << 16;
 			if (mode == LTABLEMODE) {
 				e |= TAG_LIT;
 			}

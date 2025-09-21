@@ -17,6 +17,7 @@
 #include <jdeflate/deflator.h>
 #include <ctoolbox/ulog2.h>
 
+
 #if defined(AUTOINCLUDE_1)
 
 /* Deflate format definitions */
@@ -79,16 +80,16 @@ struct TDEFLTPrvt {
 
 	/* state */
 	uintxx substate;
-	uintxx level;
-	uintxx used;
+	uint32 level;
+	uint32 used;
 	uintxx status;
 
-	uintxx blockinit;
-	uintxx blocktype;
-	uintxx hasinput;
+	uint32 blockinit;
+	uint32 blocktype;
+	uint32 hasinput;
+
 	uintxx aux1;
 	uintxx aux2;
-
 	uintxx aux3;
 	uintxx aux4;
 	uintxx aux5;
@@ -121,9 +122,9 @@ struct TDEFLTPrvt {
 	uint16* schain;
 
 	/* match search parameters */
-	uintxx nicelength;
-	uintxx goodlength;
-	uintxx maxchain;
+	uint32 nicelength;
+	uint32 goodlength;
+	uint32 maxchain;
 
 	/* block splitting stats */
 	struct TDEFLTStats* stats;
@@ -144,9 +145,9 @@ struct TDEFLTPrvt {
 		uintxx lfrqs[DEFLT_LMAXSYMBOL];
 		uintxx dfrqs[DEFLT_DMAXSYMBOL];
 		uintxx cfrqs[DEFLT_CMAXSYMBOL];
-		uintxx lmax;
-		uintxx dmax;
-		uintxx cmax;
+		uint32 lmax;
+		uint32 dmax;
+		uint32 cmax;
 
 		/* to get the symbols sorted by frequency */
 		uintxx smap[DEFLT_LMAXSYMBOL];
@@ -230,7 +231,7 @@ getmeminfo(uintxx level)
 CTB_INLINE void
 setparameters(struct TDEFLTPrvt* state, uintxx level)
 {
-	uintxx good, nice, chain;
+	uint32 good, nice, chain;
 
 	switch (level) {
 		case 1: good =   8; nice =   4; chain =   2; break;
@@ -392,7 +393,7 @@ deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
 	PRVT->window = NULL;
 	PRVT->lzlist = NULL;
 
-	PRVT->level = level;
+	PRVT->level = (uint32) level;
 	if (allocatemem(PRVT, getmeminfo(level)) == 0) {
 		deflator_destroy(PBLC);
 		return NULL;
@@ -1327,12 +1328,12 @@ static const uint8 pcodesorder[] = {
 static void
 buildtables(struct TDEFLTExtra* extra)
 {
-	uintxx lmax;
-	uintxx dmax;
-	uintxx i;
+	uint32 lmax;
+	uint32 dmax;
+	uint32 i;
 
-	lmax = setuptable(extra, LTABLEMODE, extra->lfrqs);
-	dmax = setuptable(extra, DTABLEMODE, extra->dfrqs);
+	lmax = (uint32) setuptable(extra, LTABLEMODE, extra->lfrqs);
+	dmax = (uint32) setuptable(extra, DTABLEMODE, extra->dfrqs);
 
 	for (i = 0; i < DEFLT_CMAXSYMBOL; i++) {
 		extra->cfrqs[i] = 0;
@@ -2316,7 +2317,7 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 
 			n = getmatchlength(strbgn, pmatch);
 			if (n > length) {
-				length = n;
+				length = (uint32) n;
 				offset = pmatch;
 				if (length >= PRVT->nicelength) {
 					break;
@@ -2328,9 +2329,9 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 	}
 
 	if (strbgn + length > strend) {
-		length -= (uintxx) ((strbgn + length) - strend);
+		length -= (uint32) ((strbgn + length) - strend);
 	}
-	return (struct TMatch){ length, (uintxx) (strbgn - offset) };
+	return (struct TMatch){ length, (uint32) (strbgn - offset) };
 }
 
 CTB_FORCEINLINE void
@@ -2381,7 +2382,7 @@ compress1(struct TDEFLTPrvt* state)
 	dstfrqs = PRVT->extra->dfrqs;
 	lnsfrqs = PRVT->extra->lfrqs + MAXLTCODES;
 
-	hash[0] = PRVT->aux4;
+	hash[0] = (uint32) PRVT->aux4;
 
 L_LOOP:
 	limit = (uintxx) (PRVT->inputend - PRVT->window);
@@ -2517,7 +2518,7 @@ shouldsplit(struct TDEFLTStats* stats)
 	}
 
 	for (j = 0; j < 32; j++) {
-		uintxx m;
+		uint32 m;
 
 		m = (stats->prevobs[j] >> 1) + (stats->currobs[j] >> 1);
 		stats->prevobs[j] = m;
@@ -2597,7 +2598,7 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool doshrt)
 
 			n = getmatchlength(strbgn, pmatch);
 			if (n > length) {
-				length = n;
+				length = (uint32) n;
 				offset = pmatch;
 				if (length >= PRVT->nicelength) {
 					goto L_L1;
@@ -2649,9 +2650,9 @@ L_L1:
 	PREFETCH(&PRVT->mhlist[hash[1]]);
 
 	if (strbgn + length > strend) {
-		length -= (uintxx) ((strbgn + length) - strend);
+		length -= (uint32) ((strbgn + length) - strend);
 	}
-	return (struct TMatch){ length, (uintxx) (strbgn - offset) };
+	return (struct TMatch){ length, (uint32) (strbgn - offset) };
 }
 
 #undef U32BITMASK
@@ -2730,8 +2731,8 @@ compress2(struct TDEFLTPrvt* state)
 		hasmatch = 1;
 	}
 	doshortmatches = PRVT->aux6;
-	hash[0] = PRVT->aux3;
-	hash[1] = PRVT->aux4;
+	hash[0] = (uint32) PRVT->aux3;
+	hash[1] = (uint32) PRVT->aux4;
 
 L_LOOP:
 	limit = (uintxx) (PRVT->inputend - PRVT->window);
@@ -2803,8 +2804,8 @@ L_LOOP:
 					int32 l1;
 					int32 l2;
 
-					l1 = ctb_u32log2(prevm.offset);
-					l2 = ctb_u32log2(match.offset);
+					l1 = (int32) ctb_u32log2(prevm.offset);
+					l2 = (int32) ctb_u32log2(match.offset);
 					acceptmatch = (distance << 2) + (l1 - l2) >= 2;
 				}
 			}
