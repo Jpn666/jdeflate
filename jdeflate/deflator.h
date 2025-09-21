@@ -72,7 +72,7 @@ typedef enum {
 
 /* Flags */
 typedef enum {
-	DEFLT_STATICCODES = 0x10
+	DEFLT_FIXEDCODES = 0x10
 } eDEFLTFlags;
 
 
@@ -86,14 +86,15 @@ struct TDeflator {
 
 	/* stream buffers */
 	uint8* source;
-	uint8* target;
-	uint8* send;
-	uint8* tend;
 	uint8* sbgn;
+	uint8* send;
+
+	uint8* target;
 	uint8* tbgn;
+	uint8* tend;
 };
 
-typedef struct TDeflator TDeflator;
+typedef const struct TDeflator TDeflator;
 
 
 /*
@@ -139,34 +140,37 @@ void deflator_reset(TDeflator*);
 CTB_INLINE void
 deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
 {
+	struct TDeflator* p;
 	CTB_ASSERT(state);
 
-	if (CTB_EXPECT0(state->flush)) {
-		if (state->error) {
-			state->error = DEFLT_EINCORRECTUSE;
-			state->state = 0xDEADBEEF;
+	p = (struct TDeflator*) state;
+	if (CTB_EXPECT0(p->flush)) {
+		if (p->error == 0) {
+			p->error = DEFLT_EINCORRECTUSE;
+			p->state = 0xDEADBEEF;
 		}
 		return;
 	}
 
-	state->sbgn = state->source = source;
-	state->send = source + size;
+	p->source = p->sbgn = p->send = source;
+	p->send  += size;
 }
 
 CTB_INLINE void
 deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 {
+	struct TDeflator* p;
 	CTB_ASSERT(state);
 
-	state->tbgn = state->target = target;
-	state->tend = target + size;
+	p = (struct TDeflator*) state;
+	p->target = p->tbgn = p->tend = target;
+	p->tend  += size;
 }
 
 CTB_INLINE uintxx
 deflator_srcend(TDeflator* state)
 {
 	CTB_ASSERT(state);
-
 	return (uintxx) (state->source - state->sbgn);
 }
 
@@ -174,7 +178,6 @@ CTB_INLINE uintxx
 deflator_tgtend(TDeflator* state)
 {
 	CTB_ASSERT(state);
-
 	return (uintxx) (state->target - state->tbgn);
 }
 

@@ -84,7 +84,7 @@ struct TInflator {
 	uint8* tend;
 };
 
-typedef struct TInflator TInflator;
+typedef const struct TInflator TInflator;
 
 
 /*
@@ -132,34 +132,37 @@ void inflator_reset(TInflator*);
 CTB_INLINE void
 inflator_setsrc(TInflator* state, uint8* source, uintxx size)
 {
-	CTB_ASSERT(state);
+	struct TInflator* p;
+	CTB_ASSERT(state && source && size);
 
-	if (CTB_EXPECT0(state->finalinput)) {
-		if (state->error == 0) {
-			state->error = INFLT_EINCORRECTUSE;
-			state->state = 0xDEADBEEF;
+	p = (struct TInflator*) state;
+	if (CTB_EXPECT0(p->finalinput)) {
+		if (p->error == 0) {
+			p->error = INFLT_EINCORRECTUSE;
+			p->state = 0xDEADBEEF;
 		}
 		return;
 	}
 
-	state->sbgn = state->source = source;
-	state->send = source + size;
+	p->source = p->sbgn = p->send = source;
+	p->send  += size;
 }
 
 CTB_INLINE void
 inflator_settgt(TInflator* state, uint8* target, uintxx size)
 {
-	CTB_ASSERT(state);
+	struct TInflator* p;
+	CTB_ASSERT(state && target && size);
 
-	state->tbgn = state->target = target;
-	state->tend = target + size;
+	p = (struct TInflator*) state;
+	p->target = p->tbgn = p->tend = target;
+	p->tend  += size;
 }
 
 CTB_INLINE uintxx
 inflator_srcend(TInflator* state)
 {
 	CTB_ASSERT(state);
-
 	return (uintxx) (state->source - state->sbgn);
 }
 
@@ -167,7 +170,6 @@ CTB_INLINE uintxx
 inflator_tgtend(TInflator* state)
 {
 	CTB_ASSERT(state);
-
 	return (uintxx) (state->target - state->tbgn);
 }
 

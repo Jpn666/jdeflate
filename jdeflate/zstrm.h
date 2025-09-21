@@ -89,7 +89,7 @@ typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
 
 
 /* Public state */
-struct TZStrmPblc {
+struct TZStrm {
 	/* state */
 	uintxx state;
 	uintxx error;
@@ -126,7 +126,7 @@ struct TZStrmPblc {
 	uintxx usedinput;
 };
 
-typedef const struct TZStrmPblc TZStrm;
+typedef const struct TZStrm TZStrm;
 
 
 /*
@@ -182,10 +182,10 @@ CTB_INLINE void
 zstrm_setsource(TZStrm* state, uint8* source, uintxx size)
 {
 	uint8 t[1];
-	struct TZStrmPblc* pblc;
+	struct TZStrm* pblc;
 	CTB_ASSERT(state && source && size);
 
-	pblc = (struct TZStrmPblc*) state;
+	pblc = (struct TZStrm*) state;
 	if (pblc->smode != ZSTRM_INFLATE || pblc->state) {
 		pblc->state = 4;
 		if (pblc->error == 0)
@@ -194,7 +194,7 @@ zstrm_setsource(TZStrm* state, uint8* source, uintxx size)
 	}
 	pblc->state++;
 	pblc->source = source;
-	pblc->send   = source + size;
+	pblc->send = source + size;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -203,10 +203,10 @@ CTB_INLINE void
 zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
 	uint8 t[1];
-	struct TZStrmPblc* pblc;
+	struct TZStrm* pblc;
 	CTB_ASSERT(state && fn);
 
-	pblc = (struct TZStrmPblc*) state;
+	pblc = (struct TZStrm*) state;
 	if (pblc->smode != ZSTRM_INFLATE || pblc->state) {
 		pblc->state = 4;
 		if (pblc->error == 0)
@@ -215,7 +215,7 @@ zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 	}
 	pblc->state++;
 	pblc->payload = payload;
-	pblc->iofn    = fn;
+	pblc->iofn = fn;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -223,10 +223,10 @@ zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 CTB_INLINE void
 zstrm_settargetfn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
-	struct TZStrmPblc* pblc;
+	struct TZStrm* pblc;
 	CTB_ASSERT(state && fn);
 
-	pblc = (struct TZStrmPblc*) state;
+	pblc = (struct TZStrm*) state;
 	if (pblc->smode != ZSTRM_DEFLATE || pblc->state) {
 		pblc->state = 4;
 		if (pblc->error == 0)

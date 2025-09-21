@@ -19,13 +19,13 @@
 #include <ctoolbox/crypto/adler32.h>
 
 
-#define IOBFFRSZ 32768
+#define IOBFFRSIZE 32768
 
 
 /* Private state */
 struct TZStrmPrvt {
 	/* public fields */
-	struct TZStrmPblc public;
+	struct TZStrm public;
 
 	/* checksum flags */
 	uintxx docrc:   1;
@@ -40,9 +40,10 @@ struct TZStrmPrvt {
 
 	/* buffers */
 	uint8* source;
-	uint8* target;
 	uint8* sbgn;
 	uint8* send;
+
+	uint8* target;
 	uint8* tbgn;
 	uint8* tend;
 
@@ -53,6 +54,8 @@ struct TZStrmPrvt {
 	uint8 iobuffer[1];
 };
 
+
+#define TZStrmPblc TZStrm
 
 #define PRVT ((struct TZStrmPrvt*) zstrm)
 #define PBLC ((struct TZStrmPblc*) zstrm)
@@ -121,7 +124,7 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 		allctr = (void*) ctb_getdefaultallocator();
 	}
 
-	n = sizeof(struct TZStrmPrvt) + IOBFFRSZ;
+	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
 	zstrm = allctr->request(n, allctr->user);
 	if (zstrm == NULL) {
 		return NULL;
@@ -130,7 +133,7 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 
 	if (mode == ZSTRM_INFLATE) {
 		PRVT->defltr = NULL;
-		PRVT->infltr = inflator_create(0, allctr);
+		PRVT->infltr = (void*) inflator_create(0, allctr);
 		if (PRVT->infltr == NULL) {
 			zstrm_destroy(PBLC);
 			return NULL;
@@ -138,11 +141,12 @@ zstrm_create(uintxx flags, uintxx level, TAllocator* allctr)
 	}
 	if (mode == ZSTRM_DEFLATE) {
 		PRVT->infltr = NULL;
-		PRVT->defltr = deflator_create(0, (PBLC->level = level), allctr);
+		PRVT->defltr = (void*) deflator_create(0, level, allctr);
 		if (PRVT->defltr == NULL) {
 			zstrm_destroy(PBLC);
 			return NULL;
 		}
+		PBLC->level = level;
 	}
 
 	PBLC->smode = mode;
@@ -182,7 +186,7 @@ zstrm_destroy(TZStrm* pblc)
 		deflator_destroy(PRVT->defltr);
 	}
 
-	n = sizeof(struct TZStrmPrvt) + IOBFFRSZ;
+	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
 	dispose_(zstrm, zstrm, n);
 }
 
@@ -236,11 +240,11 @@ zstrm_reset(TZStrm* pblc)
 	PRVT->tend = NULL;
 }
 
+
 #define SETERROR(ERROR) (PBLC->error = (ERROR))
 #define SETSTATE(STATE) (PBLC->state = (STATE))
 
-
-static uintxx parsehead(struct TZStrmPrvt* zstrm);
+static uintxx parsehead(struct TZStrmPrvt*);
 
 void
 zstrm_setdctn(TZStrm* pblc, uint8* dict, uintxx size)
@@ -337,9 +341,9 @@ fetchbyte(struct TZStrmPrvt* zstrm)
 	if (PBLC->iofn) {
 		intxx n;
 
-		n = PBLC->iofn(PRVT->iobuffer, IOBFFRSZ, PBLC->payload);
+		n = PBLC->iofn(PRVT->iobuffer, IOBFFRSIZE, PBLC->payload);
 		if (CTB_EXPECT1(n != 0)) {
-			if ((uintxx) n > IOBFFRSZ) {
+			if ((uintxx) n > IOBFFRSIZE) {
 				SETERROR(ZSTRM_EIOERROR);
 				return 0;
 			}
@@ -600,7 +604,7 @@ checkzlibtail(struct TZStrmPrvt* zstrm)
 #undef TOI32
 
 
-static uintxx inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total);
+static uintxx inflate(struct TZStrmPrvt*, uint8*, uintxx);
 
 uintxx
 zstrm_inflate(TZStrm* pblc, void* target, uintxx n)
@@ -752,9 +756,9 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 			if (PBLC->iofn) {
 				intxx r;
 
-				r = PBLC->iofn(PRVT->iobuffer, IOBFFRSZ, PBLC->payload);
+				r = PBLC->iofn(PRVT->iobuffer, IOBFFRSIZE, PBLC->payload);
 				if (CTB_EXPECT1(r != 0)) {
-					if (CTB_EXPECT0((uintxx) r > IOBFFRSZ)) {
+					if (CTB_EXPECT0((uintxx) r > IOBFFRSIZE)) {
 						SETERROR(ZSTRM_EIOERROR);
 						SETSTATE(4);
 						break;
@@ -803,7 +807,7 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 			}
 		}
 
-		if (total >= IOBFFRSZ) {
+		if (total >= IOBFFRSIZE) {
 			towindow = 0;
 			inflator_settgt(infltr, buffer, total);
 		}
@@ -813,9 +817,9 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 		((struct TINFLTPrvt*) infltr)->towindow = towindow;
 
 		PRVT->result = inflator_inflate(infltr, PBLC->source != NULL);
+		n = inflator_tgtend(infltr);
 
 		PBLC->usedinput += inflator_srcend(infltr);
-		n = inflator_tgtend(infltr);
 		if (PRVT->result == INFLT_ERROR) {
 			if (n != 0) {
 				SETERROR(ZSTRM_EDEFLATE);
@@ -941,10 +945,10 @@ emitzlibhead(struct TZStrmPrvt* zstrm)
 }
 
 
-static uintxx deflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total);
+static uintxx deflate(struct TZStrmPrvt*, uint8*, uintxx);
 
 
-#define DEFLTBFFRSZ (IOBFFRSZ >> 1)
+#define DEFLTBFFRSIZE (IOBFFRSIZE >> 1)
 
 uintxx
 zstrm_deflate(TZStrm* pblc, void* source, uintxx n)
@@ -972,12 +976,12 @@ zstrm_deflate(TZStrm* pblc, void* source, uintxx n)
 	}
 	if (CTB_EXPECT1(PBLC->state == 1 || PBLC->state == 2)) {
 		PRVT->source = PRVT->iobuffer;
-		PRVT->target = PRVT->iobuffer + DEFLTBFFRSZ;
+		PRVT->target = PRVT->iobuffer + DEFLTBFFRSIZE;
 
 		PRVT->sbgn = PRVT->source;
 		PRVT->tbgn = PRVT->target;
-		PRVT->send = PRVT->source + DEFLTBFFRSZ;
-		PRVT->tend = PRVT->target + DEFLTBFFRSZ;
+		PRVT->send = PRVT->source + DEFLTBFFRSIZE;
+		PRVT->tend = PRVT->target + DEFLTBFFRSIZE;
 
 		switch (PBLC->stype) {
 			case ZSTRM_GZIP: emitgziphead(PRVT); break;
@@ -1001,10 +1005,10 @@ deflatechunk(struct TZStrmPrvt* zstrm, uintxx flush, uint8* source, uintxx n)
 	uintxx total;
 	struct TDeflator* defltr;
 
-	defltr = PRVT->defltr;
+	defltr = (void*) PRVT->defltr;
 	deflator_setsrc(defltr, source, n);
 	do {
-		deflator_settgt(defltr, PRVT->target, DEFLTBFFRSZ);
+		deflator_settgt(defltr, PRVT->target, DEFLTBFFRSIZE);
 		result = deflator_deflate(defltr, flush);
 
 		total = deflator_tgtend(defltr);
@@ -1042,7 +1046,7 @@ deflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 				maxrun = total;
 			}
 			else {
-				if (maxrun == DEFLTBFFRSZ) {
+				if (maxrun == DEFLTBFFRSIZE) {
 					deflatechunk(PRVT, 0, buffer, total);
 					if (PBLC->error) {
 						SETSTATE(4);
@@ -1095,7 +1099,7 @@ deflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 			continue;
 		}
 
-		deflatechunk(PRVT, 0, PRVT->source, DEFLTBFFRSZ);
+		deflatechunk(PRVT, 0, PRVT->source, DEFLTBFFRSIZE);
 		if (PBLC->error) {
 			SETSTATE(4);
 			break;
