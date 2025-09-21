@@ -1076,7 +1076,7 @@ readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
 
 		sl = e >> 0x10;
 		if (sl < 16) {
-			lengths[scindex++] = sl;
+			lengths[scindex++] = (uint16) sl;
 			dropbits(PRVT, (uint8) e);
 			continue;
 		}

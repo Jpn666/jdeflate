@@ -417,11 +417,11 @@ resetcache(struct TDEFLTPrvt* state)
 
 	j = HMASK + 1;
 	for (i = 0; j > i; i++) {
-		PRVT->mhlist[i] = -(WNDWSIZE);
+		PRVT->mhlist[i] = (uint16) -(WNDWSIZE);
 	}
 	j = CMASK + 1;
 	for (i = 0; j > i; i++) {
-		PRVT->mchain[i] = -(WNDWSIZE);
+		PRVT->mchain[i] = (uint16) -(WNDWSIZE);
 	}
 
 	if (PRVT->level > 5) {
@@ -2080,9 +2080,9 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 				h4 = gethash(hs >> 000, HBITS);
 
 				PRVT->mchain[i & CMASK] = PRVT->mhlist[h4];
-				PRVT->mhlist[h4] = i;
+				PRVT->mhlist[h4] = (uint16) i;
 				PRVT->schain[i & QMASK] = PRVT->shlist[h3];
-				PRVT->shlist[h3] = i;
+				PRVT->shlist[h3] = (uint16) i;
 			}
 		}
 	}
@@ -2096,7 +2096,7 @@ deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
 
 				h4 = gethash(gethead(PRVT, i), HBITS);
 				PRVT->mchain[i & CMASK] = PRVT->mhlist[h4];
-				PRVT->mhlist[h4] = i;
+				PRVT->mhlist[h4] = (uint16) i;
 			}
 		}
 	}
@@ -2297,7 +2297,7 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 	next4 = PRVT->mhlist[h4];
 
 	PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-	PRVT->mhlist[h4] = position4;
+	PRVT->mhlist[h4] = (uint16) position4;
 
 	head = gethead(state, PRVT->cursor + 1);
 	h4 = gethash(head, HBITS);
@@ -2305,7 +2305,7 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 	hash[0] = h4;
 
 	chain = PRVT->maxchain;
-	for (limit = position4 - WNDWSIZE; chain != 0; chain--) {
+	for (limit = (int16) (position4 - WNDWSIZE); chain != 0; chain--) {
 		if (next4 <= limit) {
 			break;
 		}
@@ -2352,7 +2352,7 @@ skipbytes1(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[1])
 		}
 
 		PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-		PRVT->mhlist[h4] = position4;
+		PRVT->mhlist[h4] = (uint16) position4;
 
 		hs = gethead(state, PRVT->cursor + 1);
 		h4 = gethash(hs, HBITS);
@@ -2573,9 +2573,9 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool doshrt)
 	next4 = PRVT->mhlist[h4];
 
 	PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-	PRVT->mhlist[h4] = position4;
+	PRVT->mhlist[h4] = (uint16) position4;
 	PRVT->schain[position3 & QMASK] = PRVT->shlist[h3];
-	PRVT->shlist[h3] = position3;
+	PRVT->shlist[h3] = (uint16) position3;
 
 	head = gethead(state, PRVT->cursor + 1);
 	hash[0] = gethash(head >> 010, QBITS);
@@ -2586,7 +2586,7 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool doshrt)
 		chain = chain >> 1;
 	}
 
-	for (limit = position4 - WNDWSIZE; chain != 0; chain--) {
+	for (limit = (int16) (position4 - WNDWSIZE); chain != 0; chain--) {
 		if (next4 <= limit) {
 			break;
 		}
@@ -2679,9 +2679,9 @@ skipbytes2(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[2])
 		}
 
 		PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-		PRVT->mhlist[h4] = position4;
+		PRVT->mhlist[h4] = (uint16) position4;
 		PRVT->schain[position3 & QMASK] = PRVT->shlist[h3];
-		PRVT->shlist[h3] = position3;
+		PRVT->shlist[h3] = (uint16) position3;
 
 		hs = gethead(state, PRVT->cursor + 1);
 		h3 = gethash(hs >> 010, QBITS);
