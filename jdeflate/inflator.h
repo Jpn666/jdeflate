@@ -78,9 +78,9 @@ struct TInflator {
 	uint32 status;
 
 	/* stream buffers */
-	uint8* source;
-	uint8* sbgn;
-	uint8* send;
+	const uint8* source;
+	const uint8* sbgn;
+	const uint8* send;
 
 	uint8* target;
 	uint8* tbgn;
@@ -101,7 +101,7 @@ void inflator_destroy(TInflator*);
 
 /*
  * Set the source buffer for the inflator. */
-CTB_INLINE void inflator_setsrc(TInflator*, uint8* source, uintxx size);
+CTB_INLINE void inflator_setsrc(TInflator*, const uint8* source, uintxx size);
 
 /*
  * Set the target buffer for the inflator. */
@@ -122,7 +122,7 @@ eINFLTResult inflator_inflate(TInflator*, uintxx final);
 
 /*
  * Set the dictionary for the inflator. */
-void inflator_setdctnr(TInflator*, uint8* dict, uintxx size);
+void inflator_setdctnr(TInflator*, const uint8* dict, uintxx size);
 
 /*
  * Reset the inflator to its initial state. */
@@ -133,7 +133,7 @@ void inflator_reset(TInflator*);
  * Inlines */
 
 CTB_INLINE void
-inflator_setsrc(TInflator* state, uint8* source, uintxx size)
+inflator_setsrc(TInflator* state, const uint8* source, uintxx size)
 {
 	struct TInflator* p;
 	CTB_ASSERT(state && source && size);

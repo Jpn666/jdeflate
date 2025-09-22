@@ -116,8 +116,8 @@ struct TZStrm {
 	void* payload;
 
 	/* source buffer */
-	uint8* source;
-	uint8* send;
+	const uint8* source;
+	const uint8* send;
 
 	/* number of bytes consumed from the source buffer or IO callback, this
 	 * may not reflect the actual number of bytes readed if the source callback
@@ -140,7 +140,7 @@ void zstrm_destroy(TZStrm*);
 /*
  * Sets the source buffer for the stream input. This can't be used together
  * with the callback function. */
-CTB_INLINE void zstrm_setsource(TZStrm*, uint8* source, uintxx size);
+CTB_INLINE void zstrm_setsource(TZStrm*, const uint8* source, uintxx size);
 
 /*
  * Sets the source or target callback function for the stream input or output.
@@ -153,7 +153,7 @@ CTB_INLINE void zstrm_settargetfn(TZStrm*, TZStrmIOFn fn, void* payload);
  * Sets the dictionary for the stream.
  * This function can be used to provide a custom dictionary for the
  * compression or decompression process. */
-void zstrm_setdctn(TZStrm*, uint8* dict, uintxx size);
+void zstrm_setdctn(TZStrm*, const uint8* dict, uintxx size);
 
 /*
  * Decompresses n bytes of data into the target buffer. */
@@ -179,7 +179,7 @@ void zstrm_reset(TZStrm*);
  * Inlines */
 
 CTB_INLINE void
-zstrm_setsource(TZStrm* state, uint8* source, uintxx size)
+zstrm_setsource(TZStrm* state, const uint8* source, uintxx size)
 {
 	uint8 t[1];
 	struct TZStrm* pblc;

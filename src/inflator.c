@@ -921,7 +921,7 @@ L_ERROR:
 }
 
 void
-inflator_setdctnr(TInflator* state, uint8* dict, uintxx size)
+inflator_setdctnr(TInflator* state, const uint8* dict, uintxx size)
 {
 	CTB_ASSERT(state && dict && size);
 
@@ -1542,10 +1542,10 @@ static uintxx
 decodefast(struct TINFLTPrvt* state)
 {
 	uintxx r;
-	uint8* source;
+	const uint8* source;
+	const uint8* send;
 	uint8* target;
 	uint8* tend;
-	uint8* send;
 	uint64 bb;
 	uintxx bc;
 	uintxx n;

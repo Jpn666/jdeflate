@@ -88,9 +88,9 @@ struct TDeflator {
 	uint32 status;
 
 	/* stream buffers */
-	uint8* source;
-	uint8* sbgn;
-	uint8* send;
+	const uint8* source;
+	const uint8* sbgn;
+	const uint8* send;
 
 	uint8* target;
 	uint8* tbgn;
@@ -110,7 +110,7 @@ void deflator_destroy(TDeflator*);
 
 /*
  * Set the source buffer and size for the deflator instance. */
-CTB_INLINE void deflator_setsrc(TDeflator*, uint8* source, uintxx size);
+CTB_INLINE void deflator_setsrc(TDeflator*, const uint8* source, uintxx size);
 
 /*
  * Set the target buffer and size for the deflator instance. */
@@ -130,7 +130,7 @@ eDEFLTResult deflator_deflate(TDeflator*, eDEFLTFlush flush);
 
 /*
  * Set the dictionary for the deflator instance. */
-void deflator_setdctnr(TDeflator*, uint8* dict, uintxx size);
+void deflator_setdctnr(TDeflator*, const uint8* dict, uintxx size);
 
 /*
  * Reset the deflator instance to its initial state. */
@@ -141,7 +141,7 @@ void deflator_reset(TDeflator*);
  * Inlines */
 
 CTB_INLINE void
-deflator_setsrc(TDeflator* state, uint8* source, uintxx size)
+deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 {
 	struct TDeflator* p;
 	CTB_ASSERT(state);

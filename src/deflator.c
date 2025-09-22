@@ -2043,7 +2043,7 @@ getmatchlength(uint8* p1, uint8* p2)
 
 
 void
-deflator_setdctnr(TDeflator* state, uint8* dict, uintxx size)
+deflator_setdctnr(TDeflator* state, const uint8* dict, uintxx size)
 {
 	uintxx i;
 	CTB_ASSERT(state && dict && size);
@@ -2537,7 +2537,7 @@ shouldsplit(struct TDEFLTStats* stats)
 #endif
 
 CTB_FORCEINLINE struct TMatch
-getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool doshrt)
+getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool shrt)
 {
 	uint8* strbgn;
 	uint8* strend;
@@ -2607,7 +2607,7 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool doshrt)
 		next4 = PRVT->mchain[next4 & CMASK];
 	}
 
-	if (CTB_EXPECT0(doshrt && length < 3)) {
+	if (CTB_EXPECT0(shrt && length < 3)) {
 		uint32 s1;
 		uintxx noffset;
 

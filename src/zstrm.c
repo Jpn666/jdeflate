@@ -246,8 +246,14 @@ zstrm_reset(TZStrm* pblc)
 
 static uintxx parsehead(struct TZStrmPrvt*);
 
+#if defined(__GNUC__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wcast-qual"
+	#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+#endif
+
 void
-zstrm_setdctn(TZStrm* pblc, uint8* dict, uintxx size)
+zstrm_setdctn(TZStrm* pblc, const uint8* dict, uintxx size)
 {
 	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(pblc && dict && size);
@@ -311,6 +317,11 @@ L_ERROR:
 	}
 	SETSTATE(4);
 }
+
+#if defined(__GNUC__)
+	#pragma GCC diagnostic pop
+#endif
+
 
 CTB_INLINE void
 updatechecksums(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx n)
@@ -604,6 +615,12 @@ checkzlibtail(struct TZStrmPrvt* zstrm)
 #undef TOI32
 
 
+#if defined(__GNUC__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wcast-qual"
+	#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+#endif
+
 static uintxx inflate(struct TZStrmPrvt*, uint8*, uintxx);
 
 uintxx
@@ -849,6 +866,10 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 	PBLC->total += n;
 	return n;
 }
+
+#if defined(__GNUC__)
+	#pragma GCC diagnostic pop
+#endif
 
 
 /* ***************************************************************************
