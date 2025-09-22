@@ -74,6 +74,9 @@ struct TInflator {
 	uintxx flags;
 	uintxx finalinput;
 
+	/* last result from inflate call */
+	uintxx status;
+
 	/* stream buffers */
 	uint8* source;
 	uint8* sbgn;

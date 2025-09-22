@@ -82,7 +82,6 @@ struct TDEFLTPrvt {
 	uintxx substate;
 	uint32 level;
 	uint32 used;
-	uintxx status;
 
 	uint32 blockinit;
 	uint32 blocktype;
@@ -454,9 +453,10 @@ deflator_reset(TDeflator* state)
 	uint8* end;
 	CTB_ASSERT(state);
 
-	PBLC->state = 0;
-	PBLC->flush = 0;
-	PBLC->error = 0;
+	PBLC->state  = 0;
+	PBLC->flush  = 0;
+	PBLC->error  = 0;
+	PBLC->status = 0;
 
 	PBLC->source = NULL;
 	PBLC->target = NULL;
@@ -468,7 +468,6 @@ deflator_reset(TDeflator* state)
 	/* private fields */
 	PRVT->used     = 0;
 	PRVT->substate = 0;
-	PRVT->status   = 0;
 
 	PRVT->blockinit = 0;
 	PRVT->blocktype = 0;
@@ -662,7 +661,7 @@ validate(struct TDEFLTPrvt* state)
 		return 0;	
 	}
 
-	switch (PRVT->status) {
+	switch (PBLC->status) {
 		case DEFLT_SRCEXHSTD:
 			if (PBLC->source == PBLC->send) {
 				if (PBLC->flush == 0) {
@@ -713,7 +712,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 							SETSTATE(2);
 							continue;
 						}
-						return (PRVT->status = r);
+						return (PBLC->status = r);
 					case 1:
 					case 2:
 					case 3:
@@ -728,7 +727,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 
 				if (r) {
 					/* source exhausted */
-					return (PRVT->status = r);
+					return (PBLC->status = r);
 				}
 			}
 
@@ -736,7 +735,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 			case 1: {
 				r = flushblock(PRVT);
 				if (r) {
-					return (PRVT->status = r);
+					return (PBLC->status = r);
 				}
 
 				if (PBLC->flush) {
@@ -752,7 +751,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 			case 2: {
 				r = endstream(PRVT);
 				if (r) {
-					return (PRVT->status = DEFLT_TGTEXHSTD);
+					return (PBLC->status = DEFLT_TGTEXHSTD);
 				}
 				if (PBLC->flush == DEFLT_FLUSH) {
 					/* we don't invalidate the state here so we can continue
@@ -763,7 +762,7 @@ deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 				else {
 					SETSTATE(0xDEADBEEF);
 				}
-				return (PRVT->status = r);
+				return (PBLC->status = r);
 			}
 
 			default:

@@ -89,7 +89,6 @@ struct TINFLTPrvt {
 	uintxx substate;
 	uintxx final;
 	uintxx used;
-	uintxx status;
 
 	/* auxiliar fields */
 	uintxx aux0;
@@ -203,6 +202,7 @@ inflator_reset(TInflator* state)
 	PBLC->state = 0;
 	PBLC->error = 0;
 	PBLC->finalinput = 0;
+	PBLC->status = 0;
 
 	PBLC->source = NULL;
 	PBLC->sbgn   = NULL;
@@ -215,7 +215,6 @@ inflator_reset(TInflator* state)
 	PRVT->towindow = 0;
 	PRVT->final    = 0;
 	PRVT->substate = 0;
-	PRVT->status   = 0;
 
 	PRVT->used = 0;
 	PRVT->aux0 = 0;
@@ -763,7 +762,7 @@ validate(struct TINFLTPrvt* state)
 		}
 	}
 
-	switch (PRVT->status) {
+	switch (PBLC->status) {
 		case INFLT_SRCEXHSTD:
 			if (PBLC->source == PBLC->send) {
 				if (PBLC->finalinput == 0) {
@@ -840,7 +839,7 @@ L_DECODE:
 					goto L_ERROR;
 				}
 			}
-			return (PRVT->status = r);
+			return (PBLC->status = r);
 		}
 		SETSTATE(0);
 	}
@@ -866,7 +865,7 @@ L_DECODE:
 					goto L_ERROR;
 				}
 				updatewindow(PRVT);
-				return (PRVT->status = INFLT_SRCEXHSTD);
+				return (PBLC->status = INFLT_SRCEXHSTD);
 			}
 
 			/* stored */
@@ -876,7 +875,7 @@ L_DECODE:
 						SETERROR(INFLT_EINPUTEND);
 						goto L_ERROR;
 					}
-					return (PRVT->status = r);
+					return (PBLC->status = r);
 				}
 				SETSTATE(0);
 				continue;
@@ -897,7 +896,7 @@ L_DECODE:
 						SETERROR(INFLT_EINPUTEND);
 						goto L_ERROR;
 					}
-					return (PRVT->status = r);
+					return (PBLC->status = r);
 				}
 
 				SETSTATE(5);

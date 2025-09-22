@@ -84,6 +84,9 @@ struct TDeflator {
 	uintxx flags;
 	uintxx flush;
 
+	/* last result from deflate call */
+	uintxx status;
+
 	/* stream buffers */
 	uint8* source;
 	uint8* sbgn;

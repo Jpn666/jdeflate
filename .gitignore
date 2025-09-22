@@ -1,4 +1,5 @@
 .vscode
+.meson-subproject-wrap-hash.txt
 builddir/
 subprojects/*
 !subprojects/*.wrap
