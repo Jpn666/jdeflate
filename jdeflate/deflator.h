@@ -79,13 +79,13 @@ typedef enum {
 /* Public struct */
 struct TDeflator {
 	/* state */
-	uintxx state;
-	uintxx error;
-	uintxx flags;
-	uintxx flush;
+	uint32 state;
+	uint32 error;
+	uint32 flags;
+	uint32 flush;
 
 	/* last result from deflate call */
-	uintxx status;
+	uint32 status;
 
 	/* stream buffers */
 	uint8* source;

@@ -86,9 +86,9 @@ struct TINFLTPrvt {
 	uintxx towindow;
 
 	/* state */
-	uintxx substate;
-	uintxx final;
-	uintxx used;
+	uint32 substate;
+	uint32 final;
+	uint32 used;
 
 	/* auxiliar fields */
 	uintxx aux0;

@@ -69,13 +69,13 @@ typedef enum {
 /* Public struct */
 struct TInflator {
 	/* state */
-	uintxx state;
-	uintxx error;
-	uintxx flags;
-	uintxx finalinput;
+	uint32 state;
+	uint32 error;
+	uint32 flags;
+	uint32 finalinput;
 
 	/* last result from inflate call */
-	uintxx status;
+	uint32 status;
 
 	/* stream buffers */
 	uint8* source;

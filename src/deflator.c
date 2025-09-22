@@ -79,7 +79,7 @@ struct TDEFLTPrvt {
 	struct TDeflator public;
 
 	/* state */
-	uintxx substate;
+	uint32 substate;
 	uint32 level;
 	uint32 used;
 

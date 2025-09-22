@@ -36,7 +36,7 @@ struct TZStrmPrvt {
 	struct TInflator* infltr;
 
 	/* last result from inflator_inflate of deflator_deflate */
-	uintxx result;
+	uint32 result;
 
 	/* buffers */
 	uint8* source;

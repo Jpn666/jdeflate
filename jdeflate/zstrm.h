@@ -91,19 +91,19 @@ typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
 /* Public state */
 struct TZStrm {
 	/* state */
-	uintxx state;
-	uintxx error;
-	uintxx flags;
-	uintxx smode;  /* eZSTRMMode */
-	uintxx stype;  /* eZSTRMType */
-	uintxx level;
+	uint32 state;
+	uint32 error;
+	uint32 flags;
+	uint32 smode;  /* eZSTRMMode */
+	uint32 stype;  /* eZSTRMType */
+	uint32 level;
 
 	/* total number of bytes readed or written */
 	uintxx total;
 
 	/* dictionary id (adler32 checksum) */
 	uint32 dictid;
-	uintxx dict;
+	uint32 dict;
 
 	/* checksums */
 	uint32 crc;
