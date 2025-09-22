@@ -77,7 +77,7 @@ typedef enum {
 
 
 /* Public struct */
-struct TDeflator {
+struct TDeflatorPblc {
 	/* state */
 	uint32 state;
 	uint32 error;
@@ -97,7 +97,7 @@ struct TDeflator {
 	uint8* tend;
 };
 
-typedef const struct TDeflator TDeflator;
+typedef const struct TDeflatorPblc TDeflator;
 
 
 /*
@@ -143,10 +143,10 @@ void deflator_reset(TDeflator*);
 CTB_INLINE void
 deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 {
-	struct TDeflator* p;
+	struct TDeflatorPblc* p;
 	CTB_ASSERT(state);
 
-	p = (struct TDeflator*) state;
+	p = (struct TDeflatorPblc*) state;
 	if (CTB_EXPECT0(p->flush)) {
 		if (p->error == 0) {
 			p->error = DEFLT_EINCORRECTUSE;
@@ -162,10 +162,10 @@ deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 CTB_INLINE void
 deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 {
-	struct TDeflator* p;
+	struct TDeflatorPblc* p;
 	CTB_ASSERT(state);
 
-	p = (struct TDeflator*) state;
+	p = (struct TDeflatorPblc*) state;
 	p->target = p->tbgn = p->tend = target;
 	p->tend  += size;
 }

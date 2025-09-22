@@ -74,7 +74,7 @@
 /* Private stuff */
 struct TINFLTPrvt {
 	/* public fields */
-	struct TInflator public;
+	struct TInflatorPblc public;
 
     /* 
 	 * Internal flag:
@@ -132,7 +132,7 @@ struct TINFLTPrvt {
 	uint8 wndwbuffer[1];
 };
 
-#define TINFLTPblc TInflator
+#define TINFLTPblc TInflatorPblc
 
 #endif
 
@@ -165,7 +165,7 @@ TInflator*
 inflator_create(uintxx flags, TAllocator* allctr)
 {
 	uintxx n;
-	struct TInflator* state;
+	struct TInflatorPblc* state;
 
 	n = sizeof(struct TINFLTPrvt) + WNDWSIZE + 32;
 	if (allctr == NULL) {

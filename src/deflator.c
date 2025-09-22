@@ -76,7 +76,7 @@ struct TDEFLTPrvt2 {
 /* Private stuff */
 struct TDEFLTPrvt {
 	/* public fields */
-	struct TDeflator public;
+	struct TDeflatorPblc public;
 
 	/* state */
 	uint32 substate;
@@ -184,7 +184,7 @@ struct TDEFLTPrvt {
 	struct TAllocator* allctr;
 };
 
-#define TDEFLTPblc TDeflator
+#define TDEFLTPblc TDeflatorPblc
 
 #endif
 
@@ -373,7 +373,7 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 TDeflator*
 deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
 {
-	struct TDeflator* state;
+	struct TDeflatorPblc* state;
 
 	if (level >= 10) {
 		/* invalid level */

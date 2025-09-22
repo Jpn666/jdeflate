@@ -67,7 +67,7 @@ typedef enum {
 
 
 /* Public struct */
-struct TInflator {
+struct TInflatorPblc {
 	/* state */
 	uint32 state;
 	uint32 error;
@@ -87,7 +87,7 @@ struct TInflator {
 	uint8* tend;
 };
 
-typedef const struct TInflator TInflator;
+typedef const struct TInflatorPblc TInflator;
 
 
 /*
@@ -135,10 +135,10 @@ void inflator_reset(TInflator*);
 CTB_INLINE void
 inflator_setsrc(TInflator* state, const uint8* source, uintxx size)
 {
-	struct TInflator* p;
+	struct TInflatorPblc* p;
 	CTB_ASSERT(state && source && size);
 
-	p = (struct TInflator*) state;
+	p = (struct TInflatorPblc*) state;
 	if (CTB_EXPECT0(p->finalinput)) {
 		if (p->error == 0) {
 			p->error = INFLT_EINCORRECTUSE;
@@ -154,10 +154,10 @@ inflator_setsrc(TInflator* state, const uint8* source, uintxx size)
 CTB_INLINE void
 inflator_settgt(TInflator* state, uint8* target, uintxx size)
 {
-	struct TInflator* p;
+	struct TInflatorPblc* p;
 	CTB_ASSERT(state && target && size);
 
-	p = (struct TInflator*) state;
+	p = (struct TInflatorPblc*) state;
 	p->target = p->tbgn = p->tend = target;
 	p->tend  += size;
 }

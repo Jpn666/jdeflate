@@ -89,7 +89,7 @@ typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
 
 
 /* Public state */
-struct TZStrm {
+struct TZStrmPblc {
 	/* state */
 	uint32 state;
 	uint32 error;
@@ -126,7 +126,7 @@ struct TZStrm {
 	uintxx usedinput;
 };
 
-typedef const struct TZStrm TZStrm;
+typedef const struct TZStrmPblc TZStrm;
 
 
 /*
@@ -182,19 +182,19 @@ CTB_INLINE void
 zstrm_setsource(TZStrm* state, const uint8* source, uintxx size)
 {
 	uint8 t[1];
-	struct TZStrm* pblc;
+	struct TZStrmPblc* p;
 	CTB_ASSERT(state && source && size);
 
-	pblc = (struct TZStrm*) state;
-	if (pblc->smode != ZSTRM_INFLATE || pblc->state) {
-		pblc->state = 4;
-		if (pblc->error == 0)
-			pblc->error = ZSTRM_EINCORRECTUSE;
+	p = (struct TZStrmPblc*) state;
+	if (p->smode != ZSTRM_INFLATE || p->state) {
+		p->state = 4;
+		if (p->error == 0)
+			p->error = ZSTRM_EINCORRECTUSE;
 		return;
 	}
-	pblc->state++;
-	pblc->source = source;
-	pblc->send = source + size;
+	p->state++;
+	p->source = source;
+	p->send = source + size;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -203,19 +203,19 @@ CTB_INLINE void
 zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
 	uint8 t[1];
-	struct TZStrm* pblc;
+	struct TZStrmPblc* p;
 	CTB_ASSERT(state && fn);
 
-	pblc = (struct TZStrm*) state;
-	if (pblc->smode != ZSTRM_INFLATE || pblc->state) {
-		pblc->state = 4;
-		if (pblc->error == 0)
-			pblc->error = ZSTRM_EINCORRECTUSE;
+	p = (struct TZStrmPblc*) state;
+	if (p->smode != ZSTRM_INFLATE || p->state) {
+		p->state = 4;
+		if (p->error == 0)
+			p->error = ZSTRM_EINCORRECTUSE;
 		return;
 	}
-	pblc->state++;
-	pblc->payload = payload;
-	pblc->iofn = fn;
+	p->state++;
+	p->payload = payload;
+	p->iofn = fn;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -223,19 +223,19 @@ zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
 CTB_INLINE void
 zstrm_settargetfn(TZStrm* state, TZStrmIOFn fn, void* payload)
 {
-	struct TZStrm* pblc;
+	struct TZStrmPblc* p;
 	CTB_ASSERT(state && fn);
 
-	pblc = (struct TZStrm*) state;
-	if (pblc->smode != ZSTRM_DEFLATE || pblc->state) {
-		pblc->state = 4;
-		if (pblc->error == 0)
-			pblc->error = ZSTRM_EINCORRECTUSE;
+	p = (struct TZStrmPblc*) state;
+	if (p->smode != ZSTRM_DEFLATE || p->state) {
+		p->state = 4;
+		if (p->error == 0)
+			p->error = ZSTRM_EINCORRECTUSE;
 		return;
 	}
-	pblc->state++;
-	pblc->payload = payload;
-	pblc->iofn = fn;
+	p->state++;
+	p->payload = payload;
+	p->iofn = fn;
 }
 
 #endif

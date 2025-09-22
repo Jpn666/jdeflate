@@ -25,15 +25,15 @@
 /* Private state */
 struct TZStrmPrvt {
 	/* public fields */
-	struct TZStrm public;
+	struct TZStrmPblc public;
 
 	/* checksum flags */
 	uintxx docrc:   1;
 	uintxx doadler: 1;
 
 	/* inflator and deflator instances */
-	struct TDeflator* defltr;
-	struct TInflator* infltr;
+	struct TDeflatorPblc* defltr;
+	struct TInflatorPblc* infltr;
 
 	/* last result from inflator_inflate of deflator_deflate */
 	uint32 result;
@@ -54,8 +54,6 @@ struct TZStrmPrvt {
 	uint8 iobuffer[1];
 };
 
-
-#define TZStrmPblc TZStrm
 
 #define PRVT ((struct TZStrmPrvt*) zstrm)
 #define PBLC ((struct TZStrmPblc*) zstrm)
@@ -693,7 +691,7 @@ zstrm_inflate(TZStrm* pblc, void* target, uintxx n)
 /* This struct should have the same layout as the one in inflator.c, if the
  * layout changes we must reflect those changes here. */
 struct TINFLTPrvt {
-	struct TInflator public;
+	struct TInflatorPblc public;
 
 	/*
 	 * Setting this to 1 will make the inflator use the internal window buffer
@@ -709,7 +707,7 @@ inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 	uint8* tbgn;
 	uint8* tend;
 	uintxx n;
-	struct TInflator* infltr;
+	struct TInflatorPblc* infltr;
 
 	infltr = PRVT->infltr;
 
@@ -1024,7 +1022,7 @@ deflatechunk(struct TZStrmPrvt* zstrm, uintxx flush, uint8* source, uintxx n)
 {
 	uintxx result;
 	uintxx total;
-	struct TDeflator* defltr;
+	const struct TDeflatorPblc* defltr;
 
 	defltr = (void*) PRVT->defltr;
 	deflator_setsrc(defltr, source, n);
