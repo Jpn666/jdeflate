@@ -164,5 +164,4 @@ void zstrm_flush(const TZStrm*, bool final);
  * Resets the stream to its initial state. */
 void zstrm_reset(const TZStrm*);
 
-
 #endif
