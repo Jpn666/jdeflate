@@ -67,15 +67,15 @@ typedef enum {
 
 
 /* Public struct */
-struct TInflatorPblc {
+struct TInflator {
 	/* state */
-	uint32 state;
-	uint32 error;
-	uint32 flags;
-	uint32 finalinput;
+	const uint32 state;
+	const uint32 error;
+	const uint32 flags;
+	const uint32 finalinput;
 
 	/* last result from inflate call */
-	uint32 status;
+	const uint32 status;
 
 	/* stream buffers */
 	const uint8* source;
@@ -87,13 +87,13 @@ struct TInflatorPblc {
 	uint8* tend;
 };
 
-typedef const struct TInflatorPblc TInflator;
+typedef struct TInflator TInflator;
 
 
 /*
  * Create an inflator instance. If allctr is NULL, the default allocator is
  * used. */
-TInflator* inflator_create(uintxx flags, TAllocator* allctr);
+TInflator* inflator_create(uintxx flags, const TAllocator*);
 
 /*
  * Destroy the inflator instance. */
@@ -135,31 +135,33 @@ void inflator_reset(TInflator*);
 CTB_INLINE void
 inflator_setsrc(TInflator* state, const uint8* source, uintxx size)
 {
-	struct TInflatorPblc* p;
 	CTB_ASSERT(state && source && size);
 
-	p = (struct TInflatorPblc*) state;
-	if (CTB_EXPECT0(p->finalinput)) {
-		if (p->error == 0) {
+	if (CTB_EXPECT0(state->finalinput)) {
+		if (state->error == 0) {
+			struct TNonConstInflator {
+				uint32 state;
+				uint32 error;
+			}* p;
+
+			p = (struct TNonConstInflator*) state;
 			p->error = INFLT_EINCORRECTUSE;
 			p->state = 0xDEADBEEF;
 		}
 		return;
 	}
 
-	p->source = p->sbgn = p->send = source;
-	p->send  += size;
+	state->source = state->sbgn = state->send = source;
+	state->send  += size;
 }
 
 CTB_INLINE void
 inflator_settgt(TInflator* state, uint8* target, uintxx size)
 {
-	struct TInflatorPblc* p;
 	CTB_ASSERT(state && target && size);
 
-	p = (struct TInflatorPblc*) state;
-	p->target = p->tbgn = p->tend = target;
-	p->tend  += size;
+	state->target = state->tbgn = state->tend = target;
+	state->tend  += size;
 }
 
 CTB_INLINE uintxx

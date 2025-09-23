@@ -74,7 +74,25 @@
 /* Private stuff */
 struct TINFLTPrvt {
 	/* public fields */
-	struct TInflatorPblc public;
+	struct TINFLTPblc {
+		/* state */
+		uint32 state;
+		uint32 error;
+		uint32 flags;
+		uint32 finalinput;
+
+		/* last result from inflate call */
+		uint32 status;
+
+		/* stream buffers */
+		const uint8* source;
+		const uint8* sbgn;
+		const uint8* send;
+
+		uint8* target;
+		uint8* tbgn;
+		uint8* tend;
+	} public;
 
     /* 
 	 * Internal flag:
@@ -102,7 +120,7 @@ struct TINFLTPrvt {
 	uint32* dtable;
 
 	/* custom allocator */
-	struct TAllocator* allctr;
+	const struct TAllocator* allctr;
 
 	/* bit buffer */
 #if defined(CTB_ENV64)
@@ -132,7 +150,11 @@ struct TINFLTPrvt {
 	uint8 wndwbuffer[1];
 };
 
-#define TINFLTPblc TInflatorPblc
+/* */
+typedef union {
+	char a[-1 + (sizeof(struct TInflator) == sizeof(struct TINFLTPblc)) * 2];
+} TINFLTStaticAssert;
+
 
 #endif
 
@@ -142,7 +164,7 @@ struct TINFLTPrvt {
 CTB_INLINE void*
 request_(struct TINFLTPrvt* state, uintxx size)
 {
-	struct TAllocator* a;
+	const struct TAllocator* a;
 
 	a = state->allctr;
 	return a->request(size, a->user);
@@ -151,7 +173,7 @@ request_(struct TINFLTPrvt* state, uintxx size)
 CTB_INLINE void
 dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
 {
-	struct TAllocator* a;
+	const struct TAllocator* a;
 
 	a = state->allctr;
 	a->dispose(memory, size, a->user);
@@ -162,14 +184,14 @@ dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
 #define PBLC ((struct TINFLTPblc*) state)
 
 TInflator*
-inflator_create(uintxx flags, TAllocator* allctr)
+inflator_create(uintxx flags, const TAllocator* allctr)
 {
 	uintxx n;
-	struct TInflatorPblc* state;
+	struct TInflator* state;
 
 	n = sizeof(struct TINFLTPrvt) + WNDWSIZE + 32;
 	if (allctr == NULL) {
-		allctr = (void*) ctb_getdefaultallocator();
+		allctr = (const void*) ctb_getdefaultallocator();
 	}
 
 	state = allctr->request(n, allctr->user);
@@ -179,13 +201,13 @@ inflator_create(uintxx flags, TAllocator* allctr)
 	PRVT->allctr = allctr;
 
     PRVT->tables = NULL;
-	inflator_reset(PBLC);
+	inflator_reset(state);
 	if (PBLC->error) {
-		inflator_destroy(PBLC);
+		inflator_destroy(state);
 		return NULL;
 	}
 
-	PBLC->flags = flags;
+	PBLC->flags = (uint32) flags;
 	return state;
 }
 
@@ -256,8 +278,8 @@ inflator_destroy(TInflator* state)
 }
 
 
-CTB_FORCEINLINE uint16
-reversecode(uint16 code, uintxx length)
+CTB_FORCEINLINE uint32
+reversecode(uint32 code, uintxx length)
 {
 	uintxx a;
 	uintxx b;
@@ -277,7 +299,7 @@ reversecode(uint16 code, uintxx length)
 		b = rtable[b >> 4] | (rtable[b & 0x0f] << 4);
 
 		r = b | (a << 8);
-		return (uint16) (r >> (0x10 - length));
+		return (uint32) (r >> (0x10 - length));
 	}
 
 	a = (uint8) code;
@@ -290,7 +312,7 @@ CTB_FORCEINLINE uintxx
 clzero24(uint32 n)
 {
 #if defined(__GNUC__)
-	return __builtin_clz(n);
+	return (uintxx) __builtin_clz(n);
 #else
 	static const unsigned char clztable[] = {
 		0x08, 0x07, 0x06, 0x06, 0x05, 0x05, 0x05, 0x05,
@@ -343,8 +365,8 @@ clzero24(uint32 n)
 #endif
 }
 
-CTB_FORCEINLINE uint16
-reverseinc(uint16 n, uintxx length)
+CTB_FORCEINLINE uint32
+reverseinc(uint32 n, uintxx length)
 {
 	uintxx offset;
 	uintxx s;
@@ -416,14 +438,14 @@ static const uint32 dstinfo[] = {
 #define DTABLEMODE 1
 #define CTABLEMODE 2
 
-static uintxx
+static uint32
 buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 {
 	intxx left;
 	intxx i;
 	intxx j;
 	uintxx limit;
-	uint16 code;
+	uint32 code;
 	uintxx mlen;
 	uintxx symbol;
 	uintxx length;
@@ -457,9 +479,10 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 	}
 
 	/* count the number of lengths for each length */
-	i = n - 1;
-	while(i >= 0)
+	i = (intxx) n - 1;
+	while (i >= 0) {
 		counts[lengths[i--]] += 1;
+	}
 
 	if (counts[0] == n) {
 		/* RFC:
@@ -475,9 +498,10 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 	/* get the longest length */
 	i = DEFLT_MAXBITS;
-	while (counts[i] == 0)
+	while (counts[i] == 0) {
 		i--;
-	mlen = i;
+	}
+	mlen = (uintxx) i;
 
 	/* check for vality */
 	left = 1;
@@ -505,14 +529,14 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 	code = 0;
 	for (i = 1; (uintxx) i <= mlen; i++) {
 		code = (code + counts[i - 1]) << 1;
-		ncodes[i] = reversecode(code, i);
+		ncodes[i] = (uint16) reversecode(code, (uintxx) i);
 	}
 	mmask = ((uintxx) 1 << mbits) - 1;
 
 	if (mlen > mbits) {
-		uintxx count;
 		uintxx offset;
 		uintxx r;
+		intxx count;
 
 		/* herw we mark the entries on the main table as sub tables */
 		offset = mmask + 1;
@@ -522,10 +546,11 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 				continue;
 			}
 
-			code = ncodes[mbits + r] & mmask;
+			code = (uint32) (ncodes[mbits + r] & mmask);
 			j = count >> r;
-			if (count & (((uintxx) 1 << r) - 1))
+			if (count & ((1u << r) - 1)) {
 				j++;
+			}
 
 			for (i = 0; i < j; i++) {
 				entry = table + code;
@@ -567,27 +592,27 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 				e |= TAG_LIT;
 			}
 		}
-		e |= length;
+		e |= (uint32) length;
 
 		code = ncodes[length];
-		ncodes[length] = reverseinc(code, length);
-		if (length > (uintxx) mbits) {
+		ncodes[length] = (uint16) reverseinc(code, length);
+		if (length > mbits) {
 			uint32 s;
 
 			/* secondary table */
 			s = table[code & mmask];
-			j = ((uint8) s) - length;
+			j = ((uint8) s) - (intxx) length;
 			i = s >> 16;
 
 			length -= mbits;
 			code  >>= mbits;
 		}
 		else {
-			j = mbits - length;
+			j = (intxx) (mbits - length);
 			i = 0;
 		}
 
-		for (j = ((uintxx) 1 << j) - 1; j >= 0; j--) {
+		for (j = (1l << j) - 1; j >= 0; j--) {
 			table[i + (code | (j << length))] = e;
 		}
 	}
@@ -708,8 +733,18 @@ CTB_INLINE void
 setstatictables(struct TINFLTPrvt* state)
 {
 #if LROOTBITS == 10 && DROOTBITS == 8
+#if defined(__GNUC__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Wcast-qual"
+	#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+#endif
+
 	PRVT->ltable = (void*) lsttctable;
 	PRVT->dtable = (void*) dsttctable;
+
+#if defined(__GNUC__)
+	#pragma GCC diagnostic pop
+#endif
 #else
 	uintxx j;
 	struct TTINFLTTables* tables;
@@ -743,10 +778,10 @@ setstatictables(struct TINFLTPrvt* state)
 }
 
 
-static uintxx decodeblock(struct TINFLTPrvt*);
+static uint32 decodeblock(struct TINFLTPrvt*);
 
-static uintxx decodestrd(struct TINFLTPrvt*);
-static uintxx decodednmc(struct TINFLTPrvt*);
+static uint32 decodestrd(struct TINFLTPrvt*);
+static uint32 decodednmc(struct TINFLTPrvt*);
 
 CTB_INLINE bool
 validate(struct TINFLTPrvt* state)
@@ -786,7 +821,7 @@ validate(struct TINFLTPrvt* state)
 eINFLTResult
 inflator_inflate(TInflator* state, uintxx final)
 {
-	uintxx r;
+	uint32 r;
 
 	if (CTB_EXPECT1(PBLC->state ^ 0xDEADBEEF)) {
 		if (CTB_EXPECT0(PBLC->finalinput == 0 && final)) {
@@ -804,9 +839,11 @@ inflator_inflate(TInflator* state, uintxx final)
 
 	PRVT->used = 1;
 	if (CTB_EXPECT0(PRVT->towindow)) {
-		r = WNDWSIZE - PRVT->wndwend;
+		uintxx left;
+
+		left = WNDWSIZE - PRVT->wndwend;
 		if (PRVT->wndwend == WNDWSIZE) {
-			r = WNDWSIZE;
+			left = WNDWSIZE;
 			PBLC->target = PRVT->wndwbuffer;
 		}
 		else {
@@ -814,7 +851,7 @@ inflator_inflate(TInflator* state, uintxx final)
 		}
 
 		PBLC->tbgn = PBLC->target;
-		PBLC->tend = PBLC->target + r;
+		PBLC->tend = PBLC->target + left;
 	}
 
 L_DECODE:
@@ -853,9 +890,11 @@ L_DECODE:
 				}
 
 				if (tryreadbits(PRVT, 3)) {
-					PRVT->final = readbits(PRVT, 1); dropbits(PRVT, 1);
-					PBLC->state = readbits(PRVT, 2); dropbits(PRVT, 2);
-					
+					PRVT->final = (uint32) readbits(PRVT, 1);
+					dropbits(PRVT, 1);
+					PBLC->state = (uint32) readbits(PRVT, 2);
+					dropbits(PRVT, 2);
+
 					SETSTATE(PBLC->state + 1);
 					continue;
 				}
@@ -945,7 +984,7 @@ inflator_setdctnr(TInflator* state, const uint8* dict, uintxx size)
 
 #define slength PRVT->aux0
 
-static uintxx
+static uint32
 decodestrd(struct TINFLTPrvt* state)
 {
 	uintxx maxrun;
@@ -1044,7 +1083,7 @@ L_STATE3:
 #define sccount PRVT->aux2
 #define scindex PRVT->aux3
 
-CTB_INLINE uintxx
+CTB_INLINE uint32
 readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
 {
 	uint32 e;
@@ -1118,13 +1157,13 @@ readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
 	return 0;
 }
 
-static uintxx
+static uint32
 decodednmc(struct TINFLTPrvt* state)
 {
 	static const uint8 lcorder[] = {
 		16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
 	};
-	uintxx r;
+	uint32 r;
 	uint16* lengths;
 
 	switch (PRVT->substate) {
@@ -1223,7 +1262,7 @@ L_STATE2:
 	#define PLATFORMWORDSIZE 4
 #endif
 
-static uintxx
+static uint32
 copybytes(struct TINFLTPrvt* state)
 {
 	uint8* buffer;
@@ -1319,7 +1358,7 @@ copybytes(struct TINFLTPrvt* state)
 #endif
 
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-	#define LOAD64(S) ((CTB_SWAP64ONBE(((uint64*) (S))[0]) & BBMASK))
+	#define LOAD64(S) ((CTB_SWAP64ONBE(((const uint64*) (S))[0]) & BBMASK))
 #else
 	#define LOAD64(S) \
 		((((uint64) (S)[0]) << 0x00) | \
@@ -1336,16 +1375,16 @@ copybytes(struct TINFLTPrvt* state)
 #define FASTSRCLEFT  15
 #define FASTTGTLEFT 266
 
-static uintxx decodefast(struct TINFLTPrvt* state);
+static uint32 decodefast(struct TINFLTPrvt* state);
 
-static uintxx
+static uint32
 decodeblock(struct TINFLTPrvt* state)
 {
 	bitbuffer bb;
 	uintxx bc;  /* bit count */
     uintxx or;  /* bit overread count */
-	uintxx r;
-	uintxx fastcheck;
+	uint32 r;
+	uint32 fastcheck;
 	uint32 e;
 
 	bb = PRVT->bbuffer;
@@ -1367,8 +1406,8 @@ L_LOOP:
 		uintxx targetleft;
 		uintxx sourceleft;
 
-		targetleft = PBLC->tend - PBLC->target;
-		sourceleft = PBLC->send - PBLC->source;
+		targetleft = (uintxx) (PBLC->tend - PBLC->target);
+		sourceleft = (uintxx) (PBLC->send - PBLC->source);
 		if (targetleft >= FASTTGTLEFT && sourceleft >= FASTSRCLEFT) {
 			PRVT->bbuffer = bb;
 			PRVT->bcount  = bc;
@@ -1538,10 +1577,10 @@ L_SRCEXHSTD:
 #endif
 
 
-static uintxx
+static uint32
 decodefast(struct TINFLTPrvt* state)
 {
-	uintxx r;
+	uint32 r;
 	const uint8* source;
 	const uint8* send;
 	uint8* target;
@@ -1549,8 +1588,8 @@ decodefast(struct TINFLTPrvt* state)
 	uint64 bb;
 	uintxx bc;
 	uintxx n;
-	uint32* ltable;
-	uint32* dtable;
+	const uint32* ltable;
+	const uint32* dtable;
 	uint32 e;
 
 	source = PBLC->source;

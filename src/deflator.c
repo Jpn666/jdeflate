@@ -76,7 +76,25 @@ struct TDEFLTPrvt2 {
 /* Private stuff */
 struct TDEFLTPrvt {
 	/* public fields */
-	struct TDeflatorPblc public;
+	struct TDEFLTPblc {
+		/* state */
+		uint32 state;
+		uint32 error;
+		uint32 flags;
+		uint32 flush;
+
+		/* last result from deflate call */
+		uint32 status;
+
+		/* stream buffers */
+		const uint8* source;
+		const uint8* sbgn;
+		const uint8* send;
+
+		uint8* target;
+		uint8* tbgn;
+		uint8* tend;
+	} public;
 
 	/* state */
 	uint32 substate;
@@ -115,8 +133,8 @@ struct TDEFLTPrvt {
 	uintxx whence4;
 
 	/* cache */
-	uint16* mhlist;
-	uint16* mchain;
+	int16*  mhlist;
+	int16*  mchain;
 	uint16* shlist;
 	uint16* schain;
 
@@ -174,17 +192,20 @@ struct TDEFLTPrvt {
 		dstcodes[MAXLZCODES];
 
 		/* encoding tables */
-		struct THCode1* littable;
-		struct THCode2* lnstable;
-		struct THCode2* dsttable;
-	}
-	*extra;
+		const struct THCode1* littable;
+		const struct THCode2* lnstable;
+		const struct THCode2* dsttable;
+	} *extra;
 
 	/* custom allocator */
-	struct TAllocator* allctr;
+	const struct TAllocator* allctr;
 };
 
-#define TDEFLTPblc TDeflatorPblc
+/* */
+typedef union {
+	char a[-1 + (sizeof(struct TDeflator) == sizeof(struct TDEFLTPblc)) * 2];
+} TDEFLTStaticAssert;
+
 
 #endif
 
@@ -255,7 +276,7 @@ setparameters(struct TDEFLTPrvt* state, uintxx level)
 CTB_INLINE void*
 request_(struct TDEFLTPrvt* prvt, uintxx amount)
 {
-	struct TAllocator* a;
+	const struct TAllocator* a;
 
 	a = prvt->allctr;
 	return a->request(amount, a->user);
@@ -264,7 +285,7 @@ request_(struct TDEFLTPrvt* prvt, uintxx amount)
 CTB_INLINE void
 dispose_(struct TDEFLTPrvt* prvt, void* memory, uintxx amount)
 {
-	struct TAllocator* a;
+	const struct TAllocator* a;
 
 	a = prvt->allctr;
 	a->dispose(memory, amount, a->user);
@@ -285,8 +306,8 @@ allocateextra(struct TDEFLTPrvt* state)
 			return 0;
 		}
 		p2 = (struct TDEFLTPrvt2*) (e + 1);
-		PRVT->mhlist = p2->mhlist;
-		PRVT->mchain = p2->mchain;
+		PRVT->mhlist = (int16*) p2->mhlist;
+		PRVT->mchain = (int16*) p2->mchain;
 		PRVT->shlist = p2->shlist;
 		PRVT->schain = p2->schain;
 
@@ -300,8 +321,8 @@ allocateextra(struct TDEFLTPrvt* state)
 			return 0;
 		}
 		p1 = (struct TDEFLTPrvt1*) (e + 1);
-		PRVT->mhlist = p1->mhlist;
-		PRVT->mchain = p1->mchain;
+		PRVT->mhlist = (int16*) p1->mhlist;
+		PRVT->mchain = (int16*) p1->mchain;
 	}
 
 	/* set the base and extra bit values */
@@ -371,9 +392,9 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 
 
 TDeflator*
-deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
+deflator_create(uintxx flags, uintxx level, const TAllocator* allctr)
 {
-	struct TDeflatorPblc* state;
+	struct TDeflator* state;
 
 	if (level >= 10) {
 		/* invalid level */
@@ -381,7 +402,7 @@ deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
 	}
 
 	if (allctr == NULL) {
-		allctr = (void*) ctb_getdefaultallocator();
+		allctr = (const void*) ctb_getdefaultallocator();
 	}
 	state = allctr->request(sizeof(struct TDEFLTPrvt), allctr->user);
 	if (state == NULL) {
@@ -394,18 +415,18 @@ deflator_create(uintxx flags, uintxx level, TAllocator* allctr)
 
 	PRVT->level = (uint32) level;
 	if (allocatemem(PRVT, getmeminfo(level)) == 0) {
-		deflator_destroy(PBLC);
+		deflator_destroy(state);
 		return NULL;
 	}
 	setparameters(PRVT, level);
 
-	deflator_reset(PBLC);
+	deflator_reset(state);
 	if (PBLC->error) {
-		deflator_destroy(PBLC);
+		deflator_destroy(state);
 		return NULL;
 	}
 
-	state->flags = flags;
+	PBLC->flags = (uint32) flags;
 	return state;
 }
 
@@ -417,11 +438,11 @@ resetcache(struct TDEFLTPrvt* state)
 
 	j = HMASK + 1;
 	for (i = 0; j > i; i++) {
-		PRVT->mhlist[i] = (uint16) -(WNDWSIZE);
+		PRVT->mhlist[i] = (int16) -(WNDWSIZE);
 	}
 	j = CMASK + 1;
 	for (i = 0; j > i; i++) {
-		PRVT->mchain[i] = (uint16) -(WNDWSIZE);
+		PRVT->mchain[i] = (int16) -(WNDWSIZE);
 	}
 
 	if (PRVT->level > 5) {
@@ -576,7 +597,7 @@ tryflushbits(struct TDEFLTPrvt* state)
 		return 1;
 	}
 
-	bytes = (PRVT->bcount + 7) >> 3;
+	bytes = ((intxx) PRVT->bcount + 7) >> 3;
 	for (; bytes-- > 0; PRVT->bbuffer = PRVT->bbuffer >> 8) {
 		if (PBLC->target >= PBLC->tend) {
 			return 0;
@@ -599,7 +620,7 @@ putbits(struct TDEFLTPrvt* state, uintxx bits, uintxx count)
 	PRVT->bcount += count;
 }
 
-static uintxx
+static uint32
 endstream(struct TDEFLTPrvt* state)
 {
 	const uint8 endblock[] = {
@@ -647,11 +668,11 @@ endstream(struct TDEFLTPrvt* state)
 }
 
 
-static uintxx flushblock(struct TDEFLTPrvt*);
+static uint32 flushblock(struct TDEFLTPrvt*);
 
-static uintxx compress0(struct TDEFLTPrvt*);
-static uintxx compress1(struct TDEFLTPrvt*);
-static uintxx compress2(struct TDEFLTPrvt*);
+static uint32 compress0(struct TDEFLTPrvt*);
+static uint32 compress1(struct TDEFLTPrvt*);
+static uint32 compress2(struct TDEFLTPrvt*);
 
 CTB_INLINE bool
 validate(struct TDEFLTPrvt* state)
@@ -683,7 +704,7 @@ validate(struct TDEFLTPrvt* state)
 eDEFLTResult
 deflator_deflate(TDeflator* state, eDEFLTFlush flush)
 {
-	uintxx r;
+	uint32 r;
 	CTB_ASSERT(state);
 
 	if (CTB_EXPECT1(PBLC->state ^ 0xDEADBEEF)) {
@@ -786,7 +807,7 @@ L_ERROR:
 
 #define MAXSTRDSZ 0x8000
 
-static uintxx
+static uint32
 compress0(struct TDEFLTPrvt* state)
 {
 	uintxx maxrun;
@@ -815,7 +836,7 @@ L_LOOP:
 
 	ctb_memcpy(PRVT->inputend, PBLC->source, maxrun);
 	PRVT->inputend += maxrun;
-	PBLC->source  += maxrun;
+	PBLC->source   += maxrun;
 
 	PRVT->aux1 += maxrun;
 	if (PBLC->flush) {
@@ -938,14 +959,14 @@ siftdown(uintxx* smap, uintxx* frqs, uintxx i, uintxx size)
 		r = i;
 
 		if (left <= size - 1) {
-			diff = frqs[smap[left]] - frqs[smap[i]];
+			diff = (intxx) frqs[smap[left]] - (intxx) frqs[smap[i]];
 			if (diff > 0 || (diff == 0 && smap[left] > smap[i])) {
 				r = left;
 			}
 		}
 
 		if (rght <= size - 1) {
-			diff = frqs[smap[rght]] - frqs[smap[r]];
+			diff = (intxx) frqs[smap[rght]] - (intxx) frqs[smap[r]];
 			if (diff > 0 || (diff == 0 && smap[rght] > smap[r])) {
 				r = rght;
 			}
@@ -964,12 +985,13 @@ static void
 heapsort(uintxx* smap, uintxx* frqs, uintxx size)
 {
 	uintxx swap;
-	intxx j;
+	uintxx j;
 
 	j = (size >> 1) +  1;
-	for (; j >= 0; j--) {
+	for (; j > 0; j--) {
 		siftdown(smap, frqs, j, size);
 	}
+	siftdown(smap, frqs, j, size);
 
 	for (j = size - 1; j > 0; j--) {
 		swap = smap[0];
@@ -981,12 +1003,12 @@ heapsort(uintxx* smap, uintxx* frqs, uintxx size)
 }
 
 static void
-limitlengths(uintxx* lengths, intxx size, intxx mlen)
+limitlengths(uintxx* lengths, uintxx size, uintxx mlen)
 {
 	/* taken from: http://cbloomrants.blogspot.com */
 	intxx i;
 	intxx k;
-	const uintxx ktable[] = {
+	const intxx ktable[] = {
 		0x8000, 0x4000,
 		0x2000, 0x1000,
 		0x0800, 0x0400,
@@ -998,15 +1020,15 @@ limitlengths(uintxx* lengths, intxx size, intxx mlen)
 	};
 
 	k = 0;
-	for (i = 0; i < size; i++) {
-		if (lengths[i] > (uintxx) mlen) {
+	for (i = 0; i < (intxx) size; i++) {
+		if (lengths[i] > mlen) {
 			lengths[i] = mlen;
 		}
 		k += ktable[lengths[i]];
 	}
 
-	for (i = 0; i < size; i++) {
-		while (lengths[i] < (uintxx) mlen && (uintxx) k > ktable[0]) {
+	for (i = 0; i < (intxx) size; i++) {
+		while (lengths[i] < mlen && (uintxx) k > (uintxx) ktable[0]) {
 			k -= ktable[++lengths[i]];
 		}
 	}
@@ -1039,7 +1061,7 @@ katajainen(uintxx* frqs, intxx n)
 	for (next = 0; next < n - 1; next++) {
 		if (leaf >= n || ((tree < next) && (frqs[tree] < frqs[leaf]))) {
 			frqs[next] = frqs[tree];
-			frqs[tree++] = next;
+			frqs[tree++] = (uintxx) next;
 		}
 		else {
 			frqs[next] = frqs[leaf++];
@@ -1047,7 +1069,7 @@ katajainen(uintxx* frqs, intxx n)
 
 		if (leaf >= n || ((tree < next) && (frqs[tree] < frqs[leaf]))) {
 			frqs[next] = frqs[next] + frqs[tree];
-			frqs[tree++] = next;
+			frqs[tree++] = (uintxx) next;
 		}
 		else {
 			frqs[next] = frqs[next] + frqs[leaf++];
@@ -1065,7 +1087,7 @@ katajainen(uintxx* frqs, intxx n)
 		}
 
 		for (j = cnts - used; j; j--)
-			frqs[n--] = dpth;
+			frqs[n--] = (uintxx) dpth;
 
 		cnts = used << 1;
 		prev = tree;
@@ -1105,8 +1127,8 @@ reversecode(uint16 code, uintxx length)
 static uintxx
 computelengths(struct TDEFLTExtra* extra, uintxx* frqs, uintxx size)
 {
-	intxx i;
-	intxx j;
+	uintxx i;
+	uintxx j;
 
 	j = 0;
 	for (i = 0; (uintxx) i < size; i++) {
@@ -1130,15 +1152,16 @@ computelengths(struct TDEFLTExtra* extra, uintxx* frqs, uintxx size)
 
 	j = 0;
 	for (i = 0; (uintxx) i < size; i++) {
-		if (frqs[i])
+		if (frqs[i]) {
 			extra->smap[j++] = i;
+		}
 	}
 
 	heapsort(extra->smap, frqs, j);
 	for (i = 0; j > i; i++) {
 		extra->clns[i] = frqs[extra->smap[i]];
 	}
-	katajainen(extra->clns, j);
+	katajainen(extra->clns, (intxx) j);
 
 	return j;
 }
@@ -1189,7 +1212,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 	/* calculate the codes */
 	ncodes[0] = 0;
 	for (i = 1; i <= DEFLT_MAXBITS; i++) {
-		ncodes[i] = (counts[i - 1] + ncodes[i - 1]) << 1;
+		ncodes[i] = (uint16) (counts[i - 1] + ncodes[i - 1]) << 1;
 	}
 
 	r1 = extra->litcodes;
@@ -1384,17 +1407,17 @@ buildtables(struct TDEFLTExtra* extra)
 
 #define EMIT(BB, BC, BITS, N) BB |= (bitbuffer) (BITS) << (BC); BC += (N);
 
-static uintxx
+static uint32
 emitlzfast(struct TDEFLTPrvt* state)
 {
 	bitbuffer bb;
 	uintxx bc;
-	uintxx r;
+	uint32 r;
 	uintxx extra;
 	uint8* target;
-	struct THCode1* littable;
-	struct THCode2* lnstable;
-	struct THCode2* dsttable;
+	const struct THCode1* littable;
+	const struct THCode2* lnstable;
+	const struct THCode2* dsttable;
 	struct THCode1 code1;
 	struct THCode2 lcode;
 	struct THCode2 dcode;
@@ -1474,15 +1497,15 @@ L_DONE:
 #undef W6
 #undef EMIT
 
-static uintxx
+static uint32
 emitlz(struct TDEFLTPrvt* state)
 {
 	uintxx extra;
-	uintxx r;
-	uintxx fastcheck;
-	struct THCode1* littable;
-	struct THCode2* lnstable;
-	struct THCode2* dsttable;
+	uint32 r;
+	uint32 fastcheck;
+	const struct THCode1* littable;
+	const struct THCode2* lnstable;
+	const struct THCode2* dsttable;
 	struct THCode1 code1;
 	struct THCode2 code2;
 
@@ -1596,7 +1619,7 @@ L_DONE:
 	return 0;
 }
 
-static uintxx
+static uint32
 emittrees(struct TDEFLTPrvt* state)
 {
 	uintxx* slist, symbol;
@@ -1687,11 +1710,11 @@ L_STATE2:
 	return 0;
 }
 
-static uintxx
+static uint32
 flushblock(struct TDEFLTPrvt* state)
 {
 	uintxx total;
-	uintxx r;
+	uint32 r;
 	bool dostatic;
 
 	switch (PRVT->substate) {
@@ -1732,9 +1755,9 @@ flushblock(struct TDEFLTPrvt* state)
 		buildtables(PRVT->extra);
 	}
 	else {
-		PRVT->extra->littable = (void*) slitcodes;
-		PRVT->extra->lnstable = (void*) slnscodes;
-		PRVT->extra->dsttable = (void*) sdstcodes;
+		PRVT->extra->littable = (const void*) slitcodes;
+		PRVT->extra->lnstable = (const void*) slnscodes;
+		PRVT->extra->dsttable = (const void*) sdstcodes;
 	}
 
 L_STATE1:
@@ -1858,10 +1881,10 @@ slidehash(struct TDEFLTPrvt* state)
 	uintxx j;
 	int16* buffer;
 
-	for (j = 0, buffer = (int16*) PRVT->mhlist; j < HMASK + 1; j++) {
+	for (j = 0, buffer = PRVT->mhlist; j < HMASK + 1; j++) {
 		buffer[j] = 0x8000 | (buffer[j] & ~(buffer[j] >> 15));
 	}
-	for (j = 0, buffer = (int16*) PRVT->mchain; j < CMASK + 1; j++) {
+	for (j = 0, buffer = PRVT->mchain; j < CMASK + 1; j++) {
 		buffer[j] = 0x8000 | (buffer[j] & ~(buffer[j] >> 15));
 	}
 }
@@ -1925,28 +1948,28 @@ gethash(uint32 head, uintxx bits)
 	#define PREFIXTOTAL 16
 #endif
 
-CTB_FORCEINLINE uintxx
-getmatchlength(uint8* p1, uint8* p2)
+CTB_FORCEINLINE uint32
+getmatchlength(const uint8* p1, const uint8* p2)
 {
-	uint8* pp;
+	const uint8* pp;
 
 #if defined(CTB_ENV64)
-	uint64* c1;
-	uint64* c2;
+	const uint64* c1;
+	const uint64* c2;
 #if defined(CTZERO)
 	uint64 xor;
 #endif
 #else
-	uint32* c1;
-	uint32* c2;
+	const uint32* c1;
+	const uint32* c2;
 #if defined(CTZERO)
 	uint32 xor;
 #endif
 #endif
 
 	pp = p1;
-	c1 = (void*) p1;
-	c2 = (void*) p2;
+	c1 = (const void*) p1;
+	c2 = (const void*) p2;
 
 #if defined(CTZERO)
     xor = *c1++ ^ *c2++;
@@ -1967,8 +1990,8 @@ getmatchlength(uint8* p1, uint8* p2)
 	}
 
 	do {
-		if ((uintxx) ((uint8*) c1 - p1) >= 258 - PREFIXTOTAL) {
-			return (uintxx) (((uint8*) c1) - p1);
+		if ((uintxx) ((const uint8*) c1 - p1) >= 258 - PREFIXTOTAL) {
+			return (uint32) (((const uint8*) c1) - p1);
 		}
 	} while (
 		((xor = *c1++ ^ *c2++) == 0) &&
@@ -1977,13 +2000,13 @@ getmatchlength(uint8* p1, uint8* p2)
 		((xor = *c1++ ^ *c2++) == 0));
 
 L1:
-	p1 = ((uint8*) (c1 - 1)) + (CTZERO(xor) >> 3);
-	return (uintxx) (p1 - pp);
+	p1 = ((const uint8*) (c1 - 1)) + (CTZERO(xor) >> 3);
+	return (uint32) (p1 - pp);
 #else
 
 	do {
-		if ((uintxx) ((uint8*) c1 - p1) >= 258) {
-			return (uintxx) (((uint8*) c1) - p1);
+		if ((uintxx) ((const uint8*) c1 - p1) >= 258) {
+			return (uintxx) (((const uint8*) c1) - p1);
 		}
 	} while (
 		(*c1++ == *c2++) &&
@@ -2019,14 +2042,14 @@ L1:
 
 #else
 
-CTB_FORCEINLINE uintxx
-getmatchlength(uint8* p1, uint8* p2)
+CTB_FORCEINLINE uint32
+getmatchlength(const uint8* p1, const uint8* p2)
 {
 	uint8* pp;
 
 	pp = p1;
 	do {
-		if ((uintxx) ((uint8*) p1 - pp) >= 258) {
+		if ((uintxx) ((const uint8*) p1 - pp) >= 258) {
 			return (uintxx) (p1 - pp);
 		}
 	} while (
@@ -2080,7 +2103,7 @@ deflator_setdctnr(TDeflator* state, const uint8* dict, uintxx size)
 				h4 = gethash(hs >> 000, HBITS);
 
 				PRVT->mchain[i & CMASK] = PRVT->mhlist[h4];
-				PRVT->mhlist[h4] = (uint16) i;
+				PRVT->mhlist[h4] = ( int16) i;
 				PRVT->schain[i & QMASK] = PRVT->shlist[h3];
 				PRVT->shlist[h3] = (uint16) i;
 			}
@@ -2096,7 +2119,7 @@ deflator_setdctnr(TDeflator* state, const uint8* dict, uintxx size)
 
 				h4 = gethash(gethead(PRVT, i), HBITS);
 				PRVT->mchain[i & CMASK] = PRVT->mhlist[h4];
-				PRVT->mhlist[h4] = (uint16) i;
+				PRVT->mhlist[h4] = (int16) i;
 			}
 		}
 	}
@@ -2297,7 +2320,7 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 	next4 = PRVT->mhlist[h4];
 
 	PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-	PRVT->mhlist[h4] = (uint16) position4;
+	PRVT->mhlist[h4] = (int16) position4;
 
 	head = gethead(state, PRVT->cursor + 1);
 	h4 = gethash(head, HBITS);
@@ -2310,13 +2333,13 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 			break;
 		}
 
-		pmatch = PRVT->window + (PRVT->whence4 + next4);
+		pmatch = PRVT->window + (((intxx) PRVT->whence4) + next4);
 		if (strbgn[length] == pmatch[length]) {
-			uintxx n;
+			uint32 n;
 
 			n = getmatchlength(strbgn, pmatch);
 			if (n > length) {
-				length = (uint32) n;
+				length = n;
 				offset = pmatch;
 				if (length >= PRVT->nicelength) {
 					break;
@@ -2352,7 +2375,7 @@ skipbytes1(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[1])
 		}
 
 		PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-		PRVT->mhlist[h4] = (uint16) position4;
+		PRVT->mhlist[h4] = (int16) position4;
 
 		hs = gethead(state, PRVT->cursor + 1);
 		h4 = gethash(hs, HBITS);
@@ -2361,7 +2384,7 @@ skipbytes1(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[1])
 	hash[0] = h4;
 }
 
-static uintxx
+static uint32
 compress1(struct TDEFLTPrvt* state)
 {
 	uintxx limit;
@@ -2550,7 +2573,7 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool shrt)
 	uint32 h3;
 	uint32 h4;
 	int16 next4;
-	int16 next3;
+	uint16 next3;
 	int16 limit;
 
 	strbgn = strend = PRVT->window + PRVT->cursor;
@@ -2570,10 +2593,10 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool shrt)
 	h3 = hash[0];
 	h4 = hash[1];
 	next3 = PRVT->shlist[h3];
-	next4 = PRVT->mhlist[h4];
+	next4 = (int16) PRVT->mhlist[h4];
 
 	PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-	PRVT->mhlist[h4] = (uint16) position4;
+	PRVT->mhlist[h4] = ( int16) position4;
 	PRVT->schain[position3 & QMASK] = PRVT->shlist[h3];
 	PRVT->shlist[h3] = (uint16) position3;
 
@@ -2591,20 +2614,20 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool shrt)
 			break;
 		}
 
-		pmatch = PRVT->window + (PRVT->whence4 + next4);
+		pmatch = PRVT->window + (((intxx) PRVT->whence4) + next4);
 		if (strbgn[length] == pmatch[length]) {
-			uintxx n;
+			uint32 n;
 
 			n = getmatchlength(strbgn, pmatch);
 			if (n > length) {
-				length = (uint32) n;
+				length = n;
 				offset = pmatch;
 				if (length >= PRVT->nicelength) {
 					goto L_L1;
 				}
 			}
 		}
-		next4 = PRVT->mchain[next4 & CMASK];
+		next4 = (int16) PRVT->mchain[next4 & CMASK];
 	}
 
 	if (CTB_EXPECT0(shrt && length < 3)) {
@@ -2679,7 +2702,7 @@ skipbytes2(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[2])
 		}
 
 		PRVT->mchain[position4 & CMASK] = PRVT->mhlist[h4];
-		PRVT->mhlist[h4] = (uint16) position4;
+		PRVT->mhlist[h4] = ( int16) position4;
 		PRVT->schain[position3 & QMASK] = PRVT->shlist[h3];
 		PRVT->shlist[h3] = (uint16) position3;
 
@@ -2693,7 +2716,7 @@ skipbytes2(struct TDEFLTPrvt* state, uintxx skip, uintxx total, uint32 hash[2])
 	hash[1] = h4;
 }
 
-static uintxx
+static uint32
 compress2(struct TDEFLTPrvt* state)
 {
 	uintxx limit;
@@ -2795,7 +2818,7 @@ L_LOOP:
 			if (match.length >= prevm.length) {
 				int32 distance;
 
-				distance = match.length - prevm.length;
+				distance = (int32) match.length - (int32) prevm.length;
 				if (distance > 4) {
 					acceptmatch = 1;
 				}

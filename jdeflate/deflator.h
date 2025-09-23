@@ -77,15 +77,15 @@ typedef enum {
 
 
 /* Public struct */
-struct TDeflatorPblc {
+struct TDeflator {
 	/* state */
-	uint32 state;
-	uint32 error;
-	uint32 flags;
-	uint32 flush;
+	const uint32 state;
+	const uint32 error;
+	const uint32 flags;
+	const uint32 flush;
 
 	/* last result from deflate call */
-	uint32 status;
+	const uint32 status;
 
 	/* stream buffers */
 	const uint8* source;
@@ -97,12 +97,12 @@ struct TDeflatorPblc {
 	uint8* tend;
 };
 
-typedef const struct TDeflatorPblc TDeflator;
+typedef struct TDeflator TDeflator;
 
 
 /*
  * Create a deflator instance with the specified compression level. */
-TDeflator* deflator_create(uintxx flags, uintxx level, TAllocator* allctr);
+TDeflator* deflator_create(uintxx flags, uintxx level, const TAllocator*);
 
 /*
  * Destroy a deflator instance. */
@@ -143,31 +143,33 @@ void deflator_reset(TDeflator*);
 CTB_INLINE void
 deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 {
-	struct TDeflatorPblc* p;
-	CTB_ASSERT(state);
+	CTB_ASSERT(state && source && size);
 
-	p = (struct TDeflatorPblc*) state;
-	if (CTB_EXPECT0(p->flush)) {
-		if (p->error == 0) {
+	if (CTB_EXPECT0(state->flush)) {
+		if (state->error == 0) {
+			struct TNonConstInflator {
+				uint32 state;
+				uint32 error;
+			}* p;
+
+			p = (struct TNonConstInflator*) state;
 			p->error = DEFLT_EINCORRECTUSE;
 			p->state = 0xDEADBEEF;
 		}
 		return;
 	}
 
-	p->source = p->sbgn = p->send = source;
-	p->send  += size;
+	state->source = state->sbgn = state->send = source;
+	state->send  += size;
 }
 
 CTB_INLINE void
 deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 {
-	struct TDeflatorPblc* p;
-	CTB_ASSERT(state);
+	CTB_ASSERT(state && target && size);
 
-	p = (struct TDeflatorPblc*) state;
-	p->target = p->tbgn = p->tend = target;
-	p->tend  += size;
+	state->target = state->tbgn = state->tend = target;
+	state->tend  += size;
 }
 
 CTB_INLINE uintxx

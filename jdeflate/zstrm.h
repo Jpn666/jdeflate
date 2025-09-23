@@ -89,7 +89,7 @@ typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
 
 
 /* Public state */
-struct TZStrmPblc {
+struct TZStrm {
 	/* state */
 	uint32 state;
 	uint32 error;
@@ -109,16 +109,6 @@ struct TZStrmPblc {
 	uint32 crc;
 	uint32 adler;
 
-	/* IO callback */
-	TZStrmIOFn iofn;
-
-	/* IO callback parameter */
-	void* payload;
-
-	/* source buffer */
-	const uint8* source;
-	const uint8* send;
-
 	/* number of bytes consumed from the source buffer or IO callback, this
 	 * may not reflect the actual number of bytes readed if the source callback
 	 * is used, but can be used to determine the end of the stream if you
@@ -126,116 +116,53 @@ struct TZStrmPblc {
 	uintxx usedinput;
 };
 
-typedef const struct TZStrmPblc TZStrm;
+typedef struct TZStrm TZStrm;
 
 
 /*
  * Creates a new stream. */
-TZStrm* zstrm_create(uintxx flags, uintxx level, TAllocator* allctr);
+const TZStrm* zstrm_create(uintxx flags, uintxx level, const TAllocator*);
 
 /*
  * Destroys the stream. */
-void zstrm_destroy(TZStrm*);
+void zstrm_destroy(const TZStrm*);
 
 /*
  * Sets the source buffer for the stream input. This can't be used together
  * with the callback function. */
-CTB_INLINE void zstrm_setsource(TZStrm*, const uint8* source, uintxx size);
+void zstrm_setsource(const TZStrm*, const uint8* source, uintxx size);
 
 /*
  * Sets the source or target callback function for the stream input or output.
  * The callback function will be called when the stream needs more input
  * data or when the stream has output data available. */
-CTB_INLINE void zstrm_setsourcefn(TZStrm*, TZStrmIOFn fn, void* payload);
-CTB_INLINE void zstrm_settargetfn(TZStrm*, TZStrmIOFn fn, void* payload);
+void zstrm_setsourcefn(const TZStrm*, TZStrmIOFn fn, void* payload);
+void zstrm_settargetfn(const TZStrm*, TZStrmIOFn fn, void* payload);
 
 /*
  * Sets the dictionary for the stream.
  * This function can be used to provide a custom dictionary for the
  * compression or decompression process. */
-void zstrm_setdctn(TZStrm*, const uint8* dict, uintxx size);
+void zstrm_setdctn(const TZStrm*, const uint8* dict, uintxx size);
 
 /*
  * Decompresses n bytes of data into the target buffer. */
-uintxx zstrm_inflate(TZStrm*, void* target, uintxx n);
+uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
 
 /*
  * Compresses n bytes of data from the source buffer. */
-uintxx zstrm_deflate(TZStrm*, void* source, uintxx n);
+uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
 
 /*
  * Flushes the output to the stream target buffer or callback function.
  * This function can be used to ensure that all data is written
  * to the output. When final is true the stream is finalized and no more data
  * can be written to it. */
-void zstrm_flush(TZStrm*, bool final);
+void zstrm_flush(const TZStrm*, bool final);
 
 /*
  * Resets the stream to its initial state. */
-void zstrm_reset(TZStrm*);
+void zstrm_reset(const TZStrm*);
 
-
-/*
- * Inlines */
-
-CTB_INLINE void
-zstrm_setsource(TZStrm* state, const uint8* source, uintxx size)
-{
-	uint8 t[1];
-	struct TZStrmPblc* p;
-	CTB_ASSERT(state && source && size);
-
-	p = (struct TZStrmPblc*) state;
-	if (p->smode != ZSTRM_INFLATE || p->state) {
-		p->state = 4;
-		if (p->error == 0)
-			p->error = ZSTRM_EINCORRECTUSE;
-		return;
-	}
-	p->state++;
-	p->source = source;
-	p->send = source + size;
-
-	zstrm_inflate(state, t, 0);
-}
-
-CTB_INLINE void
-zstrm_setsourcefn(TZStrm* state, TZStrmIOFn fn, void* payload)
-{
-	uint8 t[1];
-	struct TZStrmPblc* p;
-	CTB_ASSERT(state && fn);
-
-	p = (struct TZStrmPblc*) state;
-	if (p->smode != ZSTRM_INFLATE || p->state) {
-		p->state = 4;
-		if (p->error == 0)
-			p->error = ZSTRM_EINCORRECTUSE;
-		return;
-	}
-	p->state++;
-	p->payload = payload;
-	p->iofn = fn;
-
-	zstrm_inflate(state, t, 0);
-}
-
-CTB_INLINE void
-zstrm_settargetfn(TZStrm* state, TZStrmIOFn fn, void* payload)
-{
-	struct TZStrmPblc* p;
-	CTB_ASSERT(state && fn);
-
-	p = (struct TZStrmPblc*) state;
-	if (p->smode != ZSTRM_DEFLATE || p->state) {
-		p->state = 4;
-		if (p->error == 0)
-			p->error = ZSTRM_EINCORRECTUSE;
-		return;
-	}
-	p->state++;
-	p->payload = payload;
-	p->iofn = fn;
-}
 
 #endif
