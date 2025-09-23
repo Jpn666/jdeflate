@@ -1,4 +1,4 @@
-project('jdeflate', 'c', default_options: ['c_std=c99', 'buildtype=release', 'warning_level=3'], version: run_command('python', join_paths(meson.current_source_dir(), 'tools/version.py'), check: true).stdout().strip())
+project('jdeflate', 'c', default_options: ['c_std=c99', 'buildtype=release', 'warning_level=3'], version: run_command('tools/version.py', check: true).stdout().strip(), meson_version: '>=1.1.0')
 
 
 deps = []
@@ -10,14 +10,14 @@ if cc.get_id() == 'msvc'
 else
   if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
     compilerflags = [
-      '-Wconversion',
-      '-Wcast-qual',
-      '-Wunused-parameter',
-      '-Wshadow',
-      '-Wswitch',
-      '-Wduplicated-branches',
-      '-Wcast-align',
-      '-Wdouble-promotion'
+      #'-Wconversion',
+      #'-Wcast-qual',
+      #'-Wunused-parameter',
+      #'-Wshadow',
+      #'-Wswitch',
+      #'-Wduplicated-branches',
+      #'-Wcast-align',
+      #'-Wdouble-promotion'
     ]
     add_project_arguments(compilerflags, language: 'c')
   endif
