@@ -1094,12 +1094,12 @@ katajainen(uintxx* frqs, intxx n)
 	}
 }
 
-CTB_FORCEINLINE uint16
-reversecode(uint16 code, uintxx length)
+CTB_FORCEINLINE uint32
+reversecode(uint32 code, uintxx length)
 {
-	uintxx a;
-	uintxx b;
-	uintxx r;
+	uint32 a;
+	uint32 b;
+	uint32 r;
 
 	static const uint8 rtable[] = {
 		0x00, 0x08, 0x04, 0x0c,
@@ -1111,17 +1111,15 @@ reversecode(uint16 code, uintxx length)
 	if (length > 8) {
 		a = (uint8) (code >> 0);
 		b = (uint8) (code >> 8);
-		a = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-		b = rtable[b >> 4] | (rtable[b & 0x0f] << 4);
+		a = rtable[a >> 4] | (uint32) (rtable[a & 0x0f] << 4);
+		b = rtable[b >> 4] | (uint32) (rtable[b & 0x0f] << 4);
 
 		r = b | (a << 8);
 		return (uint16) (r >> (0x10 - length));
 	}
 
-	a = (uint8) code;
-	r = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-
-	return (uint16) (r >> (0x08 - length));
+	r = rtable[code >> 4] | (uint32) (rtable[code & 0x0f] << 4);
+	return r >> (0x08 - length);
 }
 
 static uintxx
@@ -1212,7 +1210,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 	/* calculate the codes */
 	ncodes[0] = 0;
 	for (i = 1; i <= DEFLT_MAXBITS; i++) {
-		ncodes[i] = (uint16) (counts[i - 1] + ncodes[i - 1]) << 1;
+		ncodes[i] = (uint16) ((counts[i - 1] + ncodes[i - 1]) << 1);
 	}
 
 	r1 = extra->litcodes;
@@ -1232,7 +1230,7 @@ setuptable(struct TDEFLTExtra* extra, uintxx mode, uintxx* frqs)
 	size = mlimits[mode][0];
 	for (i = 0; i < size; i++) {
 		uintxx bitlen;
-		uint16 code;
+		uint32 code;
 		struct THCode1* c1;
 		struct THCode2* c2;
 
@@ -1798,6 +1796,11 @@ L_STATE3:
  * Mathfinder related code
  *************************************************************************** */
 
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wcast-align"
+#endif
+
 CTB_INLINE uintxx
 slidewindow(struct TDEFLTPrvt* state)
 {
@@ -1845,6 +1848,11 @@ slidewindow(struct TDEFLTPrvt* state)
 	return (uintxx) (b - w);
 }
 
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic pop
+#endif
+
+
 static uintxx
 fillwindow(struct TDEFLTPrvt* state)
 {
@@ -1882,10 +1890,10 @@ slidehash(struct TDEFLTPrvt* state)
 	int16* buffer;
 
 	for (j = 0, buffer = PRVT->mhlist; j < HMASK + 1; j++) {
-		buffer[j] = 0x8000 | (buffer[j] & ~(buffer[j] >> 15));
+		buffer[j] = (int16) (0x8000 | (buffer[j] & ~(buffer[j] >> 15)));
 	}
 	for (j = 0, buffer = PRVT->mchain; j < CMASK + 1; j++) {
-		buffer[j] = 0x8000 | (buffer[j] & ~(buffer[j] >> 15));
+		buffer[j] = (int16) (0x8000 | (buffer[j] & ~(buffer[j] >> 15)));
 	}
 }
 
@@ -1899,6 +1907,12 @@ slidehash(struct TDEFLTPrvt* state)
 	     ((B)[(N) + 2] << 0x10) | ((B)[(N) + 3] << 0x18))
 #endif
 
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wcast-align"
+#endif
+
 CTB_FORCEINLINE uint32
 gethead(struct TDEFLTPrvt* state, uintxx offset)
 {
@@ -1907,6 +1921,10 @@ gethead(struct TDEFLTPrvt* state, uintxx offset)
 	head = GETSHEAD4(PRVT->window, offset);
 	return CTB_SWAP32ONLE(head);
 }
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic pop
+#endif
 
 CTB_FORCEINLINE uint32
 gethash(uint32 head, uintxx bits)
@@ -2273,6 +2291,11 @@ addliteral(struct TDEFLTPrvt* state, uintxx literal)
 	PRVT->zend++;
 }
 
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wcast-align"
+#endif
+
 
 #if defined(__GNUC__)
 	#define PREFETCH(A) __builtin_prefetch((A), 1)
@@ -2347,7 +2370,7 @@ getmatch1(struct TDEFLTPrvt* state, uint32 length, uint32 hash[1])
 			}
 		}
 
-		next4 = PRVT->mchain[next4 & CMASK];
+		next4 = PRVT->mchain[(uint32) next4 & CMASK];
 	}
 
 	if (strbgn + length > strend) {
@@ -2627,7 +2650,7 @@ getmatch2(struct TDEFLTPrvt* state, uint32 length, uint32 hash[2], bool shrt)
 				}
 			}
 		}
-		next4 = (int16) PRVT->mchain[next4 & CMASK];
+		next4 = (int16) PRVT->mchain[(uint32) next4 & CMASK];
 	}
 
 	if (CTB_EXPECT0(shrt && length < 3)) {
@@ -2676,6 +2699,10 @@ L_L1:
 	}
 	return (struct TMatch){ length, (uint32) (strbgn - offset) };
 }
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic pop
+#endif
 
 #undef U32BITMASK
 

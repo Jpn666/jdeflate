@@ -281,9 +281,9 @@ inflator_destroy(TInflator* state)
 CTB_FORCEINLINE uint32
 reversecode(uint32 code, uintxx length)
 {
-	uintxx a;
-	uintxx b;
-	uintxx r;
+	uint32 a;
+	uint32 b;
+	uint32 r;
 
 	static const uint8 rtable[] = {
 		0x00, 0x08, 0x04, 0x0c,
@@ -295,17 +295,15 @@ reversecode(uint32 code, uintxx length)
 	if (length > 8) {
 		a = (uint8) (code >> 0);
 		b = (uint8) (code >> 8);
-		a = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-		b = rtable[b >> 4] | (rtable[b & 0x0f] << 4);
+		a = rtable[a >> 4] | (uint32) (rtable[a & 0x0f] << 4);
+		b = rtable[b >> 4] | (uint32) (rtable[b & 0x0f] << 4);
 
 		r = b | (a << 8);
 		return (uint32) (r >> (0x10 - length));
 	}
 
-	a = (uint8) code;
-	r = rtable[a >> 4] | (rtable[a & 0x0f] << 4);
-
-	return (uint16) (r >> (0x08 - length));
+	r = rtable[code >> 4] | (uint32) (rtable[code & 0x0f] << 4);
+	return r >> (0x08 - length);
 }
 
 CTB_FORCEINLINE uintxx
@@ -733,18 +731,8 @@ CTB_INLINE void
 setstatictables(struct TINFLTPrvt* state)
 {
 #if LROOTBITS == 10 && DROOTBITS == 8
-#if defined(__GNUC__)
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wcast-qual"
-	#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
-#endif
-
-	PRVT->ltable = (void*) lsttctable;
-	PRVT->dtable = (void*) dsttctable;
-
-#if defined(__GNUC__)
-	#pragma GCC diagnostic pop
-#endif
+	PRVT->ltable = CTB_CONSTCAST(lsttctable);
+	PRVT->dtable = CTB_CONSTCAST(dsttctable);
 #else
 	uintxx j;
 	struct TTINFLTTables* tables;
@@ -1011,11 +999,11 @@ decodestrd(struct TINFLTPrvt* state)
 
 L_STATE1:
 	if (tryreadbits(PRVT, 16)) {
-		uint8 a;
-		uint8 b;
+		uint32 a;
+		uint32 b;
 
-		a = (uint8) readbits(PRVT, 8); dropbits(PRVT, 8);
-		b = (uint8) readbits(PRVT, 8); dropbits(PRVT, 8);
+		a = (uint32) readbits(PRVT, 8); dropbits(PRVT, 8);
+		b = (uint32) readbits(PRVT, 8); dropbits(PRVT, 8);
 		slength = a | (b << 8);
 	}
 	else {
@@ -1027,11 +1015,11 @@ L_STATE1:
 L_STATE2:
 	if (tryreadbits(PRVT, 16)) {
 		uintxx nlength;
-		uint8 a;
-		uint8 b;
+		uint32 a;
+		uint32 b;
 
-		a = (uint8) readbits(PRVT, 8); dropbits(PRVT, 8);
-		b = (uint8) readbits(PRVT, 8); dropbits(PRVT, 8);
+		a = (uint32) readbits(PRVT, 8); dropbits(PRVT, 8);
+		b = (uint32) readbits(PRVT, 8); dropbits(PRVT, 8);
 		nlength = a | (b << 8);
 
 		if ((uint16) ~slength != nlength) {
@@ -1251,6 +1239,11 @@ L_STATE2:
 #undef sccount
 #undef scindex
 
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wcast-align"
+#endif
 
 #define slength PRVT->aux0
 #define soffset PRVT->aux1
@@ -1819,6 +1812,10 @@ decodefast(struct TINFLTPrvt* state)
 	PBLC->target = target;
 	return r;
 }
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic pop
+#endif
 
 #undef PRVT
 #undef WNDWSIZE

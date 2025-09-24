@@ -15,7 +15,6 @@ else
       '-Wunused-parameter',
       '-Wshadow',
       '-Wswitch',
-      '-Wduplicated-branches',
       '-Wcast-align',
       '-Wdouble-promotion'
     ]

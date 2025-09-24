@@ -82,10 +82,15 @@ typedef enum {
 
 
 /*
- * IO function prototype.
- * Return value must be the number of bytes written or readed to the buffer
- * (zero if there is no more input avaible or -1 if there is an error). */
-typedef intxx (*TZStrmIOFn)(uint8* buffer, uintxx size, void* payload);
+ * IO function prototypes.
+ * Return value must be the number of bytes read or written to the buffer
+ * (zero if there is no more input available or -1 if there is an error). */
+
+/* Input function */
+typedef intxx (*TZStrmIFn)(      uint8* buffer, uintxx size, void* user);
+
+/* Output function */
+typedef intxx (*TZStrmOFn)(const uint8* buffer, uintxx size, void* user);
 
 
 /* Public state */
@@ -136,8 +141,8 @@ void zstrm_setsource(const TZStrm*, const uint8* source, uintxx size);
  * Sets the source or target callback function for the stream input or output.
  * The callback function will be called when the stream needs more input
  * data or when the stream has output data available. */
-void zstrm_setsourcefn(const TZStrm*, TZStrmIOFn fn, void* payload);
-void zstrm_settargetfn(const TZStrm*, TZStrmIOFn fn, void* payload);
+void zstrm_setsourcefn(const TZStrm*, TZStrmIFn fn, void* user);
+void zstrm_settargetfn(const TZStrm*, TZStrmOFn fn, void* user);
 
 /*
  * Sets the dictionary for the stream.
@@ -146,15 +151,19 @@ void zstrm_settargetfn(const TZStrm*, TZStrmIOFn fn, void* payload);
 void zstrm_setdctn(const TZStrm*, const uint8* dict, uintxx size);
 
 /*
- * Decompresses n bytes of data into the target buffer. */
+ * Decompresses up to n bytes of data into the target buffer.
+ * Returns the number of bytes written to the target buffer. */
 uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
 
 /*
- * Compresses n bytes of data from the source buffer. */
+ * Compresses n bytes of data from the source buffer.
+ * Returns the number of bytes written. This function will always return the
+ * same number of input bytes (n) unless there is an error in the output
+ * callback function. */
 uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
 
 /*
- * Flushes the output to the stream target buffer or callback function.
+ * Flushes the output to the stream output callback function.
  * This function can be used to ensure that all data is written
  * to the output. When final is true the stream is finalized and no more data
  * can be written to it. */

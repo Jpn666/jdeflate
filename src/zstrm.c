@@ -22,6 +22,9 @@
 #define IOBFFRSIZE 32768
 
 
+typedef intxx (*TZStrmIOFn)(uint8*, uintxx, void*);
+
+
 /* Private state */
 struct TZStrmPrvt {
 	/* public fields */
@@ -31,11 +34,11 @@ struct TZStrmPrvt {
 	TZStrmIOFn iofn;
 
 	/* IO callback parameter */
-	void* payload;
+	void* user;
 
 	/* source buffer */
-	uint8* input;
-	uint8* inputend;
+	const uint8* input;
+	const uint8* inputend;
 
 	/* checksum flags */
 	uint32 docrc;
@@ -65,24 +68,9 @@ struct TZStrmPrvt {
 };
 
 
-#if defined(__GNUC__)
-	#pragma GCC diagnostic push
-	#pragma GCC diagnostic ignored "-Wcast-qual"
-	#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
-#endif
+#define PRVT ((struct TZStrmPrvt*) CTB_CONSTCAST(state))
+#define PBLC ((struct TZStrm*)     CTB_CONSTCAST(state))
 
-
-#define PRVT ((struct TZStrmPrvt*) state)
-#define PBLC ((struct TZStrm*)     state)
-
-CTB_INLINE void*
-request_(struct TZStrmPrvt* p, uintxx size)
-{
-	const struct TAllocator* a;
-
-	a = p->allctr;
-	return a->request(size, a->user);
-}
 
 CTB_INLINE void
 dispose_(struct TZStrmPrvt* p, void* memory, uintxx size)
@@ -215,7 +203,8 @@ zstrm_reset(const TZStrm* state)
 	}
 
 	PBLC->dictid = 0;
-	PBLC->dict  = 0;
+	PBLC->dict   = 0;
+
 	PBLC->crc   = 0xffffffff;
 	PBLC->adler = 1;
 	PBLC->total = 0;
@@ -236,7 +225,7 @@ zstrm_reset(const TZStrm* state)
 
 	/* IO */
 	PRVT->iofn = NULL;
-	PRVT->payload  = NULL;
+	PRVT->user = NULL;
 	PRVT->input    = NULL;
 	PRVT->inputend = NULL;
 
@@ -273,7 +262,7 @@ zstrm_setsource(const TZStrm* state, const uint8* source, uintxx size)
 }
 
 void
-zstrm_setsourcefn(const TZStrm* state, TZStrmIOFn fn, void* payload)
+zstrm_setsourcefn(const TZStrm* state, TZStrmIFn fn, void* user)
 {
 	uint8 t[1];
 	CTB_ASSERT(state && fn);
@@ -286,14 +275,14 @@ zstrm_setsourcefn(const TZStrm* state, TZStrmIOFn fn, void* payload)
 		return;
 	}
 	SETSTATE(1);
-	PRVT->payload = payload;
-	PRVT->iofn    = fn;
+	PRVT->user = user;
+	PRVT->iofn = (TZStrmIOFn) fn;
 
 	zstrm_inflate(state, t, 0);
 }
 
 void
-zstrm_settargetfn(const TZStrm* state, TZStrmIOFn fn, void* payload)
+zstrm_settargetfn(const TZStrm* state, TZStrmOFn fn, void* user)
 {
 	CTB_ASSERT(state && fn);
 
@@ -305,8 +294,8 @@ zstrm_settargetfn(const TZStrm* state, TZStrmIOFn fn, void* payload)
 		return;
 	}
 	SETSTATE(1);
-	PRVT->payload = payload;
-	PRVT->iofn    = fn;
+	PRVT->user = user;
+	PRVT->iofn = (TZStrmIOFn) fn;
 }
 
 static uintxx parsehead(struct TZStrmPrvt*);
@@ -323,8 +312,8 @@ zstrm_setdctn(const TZStrm* state, const uint8* dict, uintxx size)
 	if (PBLC->smode == ZSTRM_INFLATE) {
 		if (PBLC->state == 1) {
 			if (PRVT->input) {
-				PRVT->sbgn = PRVT->input;
-				PRVT->send = PRVT->inputend;
+				PRVT->sbgn = CTB_CONSTCAST(PRVT->input);
+				PRVT->send = CTB_CONSTCAST(PRVT->inputend);
 			}
 
 			if (parsehead(PRVT) == 0) {
@@ -404,7 +393,7 @@ fetchbyte(struct TZStrmPrvt* state)
 	if (PRVT->iofn) {
 		intxx n;
 
-		n = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->payload);
+		n = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->user);
 		if (CTB_EXPECT1(n != 0)) {
 			if ((uintxx) n > IOBFFRSIZE) {
 				SETERROR(ZSTRM_EIOERROR);
@@ -429,9 +418,9 @@ fetchbyte(struct TZStrmPrvt* state)
 static bool
 parsegziphead(struct TZStrmPrvt* state)
 {
-	uint8 id1;
-	uint8 id2;
-	uint8 flags;
+	uint32 id1;
+	uint32 id2;
+	uint32 flags;
 
 	id1 = fetchbyte(PRVT);
 	id2 = fetchbyte(PRVT);
@@ -460,9 +449,9 @@ parsegziphead(struct TZStrmPrvt* state)
 
 	/* extra */
 	if (flags & 0x04) {
-		uint8 a;
-		uint8 b;
-		uint16 length;
+		uint32 a;
+		uint32 b;
+		uint32 length;
 
 		a = fetchbyte(PRVT);
 		b = fetchbyte(PRVT);
@@ -496,8 +485,8 @@ parsegziphead(struct TZStrmPrvt* state)
 static bool
 parsezlibhead(struct TZStrmPrvt* state)
 {
-	uint8 a;
-	uint8 b;
+	uint32 a;
+	uint32 b;
 
 	a = fetchbyte(PRVT);
 	b = fetchbyte(PRVT);
@@ -517,8 +506,8 @@ parsezlibhead(struct TZStrmPrvt* state)
 			fdict = (b >> 5) & 0x01;
 			(void) fchck;
 			if (fdict) {
-				uint8 c;
-				uint8 d;
+				uint32 c;
+				uint32 d;
 
 				d = fetchbyte(PRVT);
 				c = fetchbyte(PRVT);
@@ -604,10 +593,10 @@ checkgziptail(struct TZStrmPrvt* state)
 {
 	uint32 crc;
 	uint32 total;
-	uint8 a;
-	uint8 b;
-	uint8 c;
-	uint8 d;
+	uint32 a;
+	uint32 b;
+	uint32 c;
+	uint32 d;
 
 	/* crc32 */
 	a = fetchbyte(PRVT);
@@ -644,10 +633,10 @@ checkgziptail(struct TZStrmPrvt* state)
 CTB_INLINE void
 checkzlibtail(struct TZStrmPrvt* state)
 {
-	uint8 a;
-	uint8 b;
-	uint8 c;
-	uint8 d;
+	uint32 a;
+	uint32 b;
+	uint32 c;
+	uint32 d;
 	uint32 adler;
 
 	d = fetchbyte(PRVT);
@@ -691,8 +680,8 @@ zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 		uintxx total;
 
 		if (PRVT->input) {
-			PRVT->sbgn = PRVT->input;
-			PRVT->send = PRVT->inputend;
+			PRVT->sbgn = CTB_CONSTCAST(PRVT->input);
+			PRVT->send = CTB_CONSTCAST(PRVT->inputend);
 		}
 		PRVT->result = INFLT_TGTEXHSTD;
 
@@ -731,6 +720,12 @@ zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 
 	return 0;
 }
+
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic push
+	#pragma clang diagnostic ignored "-Wcast-align"
+#endif
 
 
 /* This struct should have the same layout as the one in inflator.c, if the
@@ -816,7 +811,7 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 			if (PRVT->iofn) {
 				intxx r;
 
-				r = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->payload);
+				r = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->user);
 				if (CTB_EXPECT1(r != 0)) {
 					if (CTB_EXPECT0((uintxx) r > IOBFFRSIZE)) {
 						SETERROR(ZSTRM_EIOERROR);
@@ -825,8 +820,8 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 					}
 
 					inflator_setsrc(infltr, PRVT->iobuffer, (uintxx) r);
-					PRVT->sbgn = infltr->sbgn;
-					PRVT->send = infltr->send;
+					PRVT->sbgn = CTB_CONSTCAST(infltr->sbgn);
+					PRVT->send = CTB_CONSTCAST(infltr->send);
 				}
 				else {
 					SETERROR(ZSTRM_EBADDATA);
@@ -926,7 +921,7 @@ emittarget(struct TZStrmPrvt* state)
 		return;
 	}
 
-	r = PRVT->iofn(PRVT->target, total, PRVT->payload);
+	r = PRVT->iofn(PRVT->target, total, PRVT->user);
 	if ((uintxx) r > total || (uintxx) r != total) {
 		SETERROR(ZSTRM_EIOERROR);
 		return;
@@ -1066,13 +1061,13 @@ dochunk(struct TZStrmPrvt* state, uintxx flush, const uint8* source, uintxx n)
 	deflator_setsrc(defltr, source, n);
 	do {
 		deflator_settgt(defltr, PRVT->target, DEFLTBFFRSIZE);
-		result = deflator_deflate(defltr, flush);
+		result = deflator_deflate(defltr, (uint32) flush);
 
 		total = deflator_tgtend(defltr);
 		if (total != 0) {
 			intxx r;
 
-			r = PRVT->iofn(PRVT->target, total, PRVT->payload);
+			r = PRVT->iofn(PRVT->target, total, PRVT->user);
 			if ((uintxx) r > total || (uintxx) r != total) {
 				SETERROR(ZSTRM_EIOERROR);
 				break;
@@ -1116,13 +1111,13 @@ deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
 			for (total -= maxrun; maxrun >= 16; maxrun -= 16) {
 #if defined(CTB_FASTUNALIGNED)
 #if defined(CTB_ENV64)
-				((uint64*) sbgn)[0] = ((uint64*) buffer)[0];
-				((uint64*) sbgn)[1] = ((uint64*) buffer)[1];
+				((uint64*) sbgn)[0] = ((const uint64*) buffer)[0];
+				((uint64*) sbgn)[1] = ((const uint64*) buffer)[1];
 #else
-				((uint32*) sbgn)[0] = ((uint32*) buffer)[0];
-				((uint32*) sbgn)[1] = ((uint32*) buffer)[1];
-				((uint32*) sbgn)[2] = ((uint32*) buffer)[2];
-				((uint32*) sbgn)[3] = ((uint32*) buffer)[3];
+				((uint32*) sbgn)[0] = ((const uint32*) buffer)[0];
+				((uint32*) sbgn)[1] = ((const uint32*) buffer)[1];
+				((uint32*) sbgn)[2] = ((const uint32*) buffer)[2];
+				((uint32*) sbgn)[3] = ((const uint32*) buffer)[3];
 #endif
 				buffer += 16;
 				sbgn   += 16;
@@ -1167,6 +1162,10 @@ deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
 	PRVT->sbgn = sbgn;
 	return (uintxx) (buffer - bbgn);
 }
+
+#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+	#pragma clang diagnostic pop
+#endif
 
 
 CTB_INLINE void
@@ -1249,10 +1248,6 @@ L1:
 	SETSTATE(4);
 }
 
-
-#if defined(__GNUC__)
-	#pragma GCC diagnostic pop
-#endif
 
 #undef PRVT
 #undef PBLC
