@@ -679,7 +679,7 @@ validate(struct TDEFLTPrvt* state)
 {
 	if (PBLC->source == NULL || PBLC->target == NULL) {
 		SETERROR(DEFLT_EINCORRECTUSE);
-		return 0;	
+		return 0;
 	}
 
 	switch (PBLC->status) {
@@ -2024,7 +2024,7 @@ L1:
 
 	do {
 		if ((uintxx) ((const uint8*) c1 - p1) >= 258) {
-			return (uintxx) (((const uint8*) c1) - p1);
+			return (uint32) (((const uint8*) c1) - p1);
 		}
 	} while (
 		(*c1++ == *c2++) &&
@@ -2032,8 +2032,8 @@ L1:
 		(*c1++ == *c2++) &&
 		(*c1++ == *c2++));
 
-	p1 = (void*) (c1 - 1);
-	p2 = (void*) (c2 - 1);
+	p1 = (const void*) (c1 - 1);
+	p2 = (const void*) (c2 - 1);
 
 	if (p1[0] ^ p2[0]) { p1 += 0; goto L1; }
 	if (p1[1] ^ p2[1]) { p1 += 1; goto L1; }
@@ -2047,7 +2047,7 @@ L1:
 #endif
 
 L1:
-	return (uintxx) (p1 - pp);
+	return (uint32) (p1 - pp);
 #endif
 }
 
@@ -2063,12 +2063,12 @@ L1:
 CTB_FORCEINLINE uint32
 getmatchlength(const uint8* p1, const uint8* p2)
 {
-	uint8* pp;
+	const uint8* pp;
 
 	pp = p1;
 	do {
 		if ((uintxx) ((const uint8*) p1 - pp) >= 258) {
-			return (uintxx) (p1 - pp);
+			return (uint32) (p1 - pp);
 		}
 	} while (
 		(*p1++ == *p2++) &&
@@ -2077,7 +2077,7 @@ getmatchlength(const uint8* p1, const uint8* p2)
 		(*p1++ == *p2++));
 
 	p1--;
-	return (uintxx) (p1 - pp);
+	return (uint32) (p1 - pp);
 }
 
 #endif

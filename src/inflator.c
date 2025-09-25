@@ -776,12 +776,12 @@ validate(struct TINFLTPrvt* state)
 {
 	if (PBLC->source == NULL) {
 		SETERROR(INFLT_EINCORRECTUSE);
-		return 0;	
+		return 0;
 	}
 	if (PBLC->target == NULL) {
 		if (PRVT->towindow == 0) {
 			SETERROR(INFLT_EINCORRECTUSE);
-			return 0;	
+			return 0;
 		}
 	}
 

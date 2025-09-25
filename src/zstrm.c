@@ -881,7 +881,7 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 				SETSTATE(4);
 				break;
 			}
-			/* we have an error but there is output avaible */
+			/* we have an error but there is output available */
 		}
 
 		if (towindow == 0) {
