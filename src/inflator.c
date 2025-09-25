@@ -1344,14 +1344,9 @@ copybytes(struct TINFLTPrvt* state)
 
 #define MASKBITS(BB, N) ((BB) & ((1ul << (N)) - 1))
 
-#if defined(CTB_ENV64)
-	#define BBMASK 0x00ffffffffffffffull
-#else
-	#define BBMASK 0x00fffffful
-#endif
-
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
-	#define LOAD64(S) ((CTB_SWAP64ONBE(((const uint64*) (S))[0]) & BBMASK))
+	#define LOAD64(S) \
+		((CTB_SWAP64ONBE(((const uint64*) (S))[0]) & 0x00ffffffffffffffull))
 #else
 	#define LOAD64(S) \
 		((((uint64) (S)[0]) << 0x00) | \
