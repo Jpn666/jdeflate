@@ -546,7 +546,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 			code = (uint32) (ncodes[mbits + r] & mmask);
 			j = count >> r;
-			if (count & ((1u << r) - 1)) {
+			if (count & ((1l << r) - 1)) {
 				j++;
 			}
 
@@ -600,7 +600,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 			/* secondary table */
 			s = table[code & mmask];
 			j = ((uint8) s) - (intxx) length;
-			i = s >> 16;
+			i = (intxx) (s >> 16);
 
 			length -= mbits;
 			code  >>= mbits;
@@ -611,7 +611,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 		}
 
 		for (j = (1l << j) - 1; j >= 0; j--) {
-			table[i + (code | (j << length))] = e;
+			table[(uint32) i + (code | ((uint32) j << length))] = e;
 		}
 	}
 
@@ -1653,7 +1653,7 @@ decodefast(struct TINFLTPrvt* state)
 		DROPBITS(bb, bc, (uint8) e);
 
 		extra  = (e >> 0x08) & 0x0f;
-		length = (e >> 0x10) + MASKBITS(bb, extra);
+		length = (e >> 0x10) + (uintxx) MASKBITS(bb, extra);
 		DROPBITS(bb, bc, extra);
 
 		/* distance */
@@ -1679,7 +1679,7 @@ decodefast(struct TINFLTPrvt* state)
 		}
 
 		extra  = (e >> 0x08) & 0x0f;
-		offset = (e >> 0x10) + MASKBITS(bb, extra);
+		offset = (e >> 0x10) + (uintxx) MASKBITS(bb, extra);
 		DROPBITS(bb, bc, extra);
 
 		targetbytes = (uintxx) (target - PBLC->tbgn);
@@ -1805,7 +1805,7 @@ decodefast(struct TINFLTPrvt* state)
 
 	/* restore unused bytes */
 	n = bc & 0x07;
-	PRVT->bbuffer = bb & ((((bitbuffer) 1ul) << n) - 1);
+	PRVT->bbuffer = (bitbuffer) (bb & ((((bitbuffer) 1ul) << n) - 1));
 	PRVT->bcount  = n;
 
 	PBLC->source = source - ((bc - n) >> 3);
