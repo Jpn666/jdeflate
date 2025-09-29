@@ -18,13 +18,9 @@
 #include <ctoolbox/ulog2.h>
 
 
-#if defined(AUTOINCLUDE_1)
-
 /* Deflate format definitions */
 #define DEFLT_MAXBITS 15
 #define DEFLT_PCODESMAXBITS 7
-
-#else
 
 #define DEFLT_LMAXSYMBOL 288
 #define DEFLT_DMAXSYMBOL 32
@@ -207,12 +203,6 @@ typedef union {
 } TDEFLTStaticAssert;
 
 
-#endif
-
-
-#if defined(AUTOINCLUDE_1)
-
-
 /* window buffer size | lz buffer size */
 #define BUILDMEMINFO(A, B) (((A) << 0x08) | ((B) << 0x00))
 
@@ -271,6 +261,11 @@ setparameters(struct TDEFLTPrvt* state, uintxx level)
 	PRVT->nicelength = nice;
 	PRVT->maxchain   = chain;
 }
+
+
+static const struct THCode1* slitcodes;
+static const struct THCode2* slnscodes;
+static const struct THCode2* sdstcodes;
 
 CTB_INLINE uintxx
 allocateextra(struct TDEFLTPrvt* state)
@@ -2975,13 +2970,11 @@ L_LOOP:
 #undef PRVT
 
 
-#else
-
 /* ****************************************************************************
- * Static Tables
+ * Fixed code Tables
  *************************************************************************** */
 
-static const struct THCode1 slitcodes[MAXLTCODES] = {
+static const struct THCode1 slitcodes_[MAXLTCODES] = {
 	{0x08, 0x000c}, {0x08, 0x008c}, {0x08, 0x004c},
 	{0x08, 0x00cc}, {0x08, 0x002c}, {0x08, 0x00ac},
 	{0x08, 0x006c}, {0x08, 0x00ec}, {0x08, 0x001c},
@@ -3070,7 +3063,7 @@ static const struct THCode1 slitcodes[MAXLTCODES] = {
 	{0x09, 0x01ff}, {0x07, 0x0000}
 };
 
-static const struct THCode2 slnscodes[MAXLZCODES] = {
+static const struct THCode2 slnscodes_[MAXLZCODES] = {
 	{0x07, 0x00, 0x0040, 0x0003}, {0x07, 0x00, 0x0020, 0x0004},
 	{0x07, 0x00, 0x0060, 0x0005}, {0x07, 0x00, 0x0010, 0x0006},
 	{0x07, 0x00, 0x0050, 0x0007}, {0x07, 0x00, 0x0030, 0x0008},
@@ -3088,7 +3081,7 @@ static const struct THCode2 slnscodes[MAXLZCODES] = {
 	{0x08, 0x00, 0x00a3, 0x0102}, {0x08, 0x00, 0x0063, 0x0102}
 };
 
-static const struct THCode2 sdstcodes[MAXLZCODES] = {
+static const struct THCode2 sdstcodes_[MAXLZCODES] = {
 	{0x05, 0x00, 0x0000, 0x0001}, {0x05, 0x00, 0x0010, 0x0002},
 	{0x05, 0x00, 0x0008, 0x0003}, {0x05, 0x00, 0x0018, 0x0004},
 	{0x05, 0x01, 0x0004, 0x0005}, {0x05, 0x01, 0x0014, 0x0007},
@@ -3106,9 +3099,6 @@ static const struct THCode2 sdstcodes[MAXLZCODES] = {
 	{0x05, 0x0d, 0x0007, 0x4001}, {0x05, 0x0d, 0x0017, 0x6001}
 };
 
-
-#define AUTOINCLUDE_1
-	#include "deflator.c"
-#undef  AUTOINCLUDE_1
-
-#endif
+static const struct THCode1* slitcodes = slitcodes_;
+static const struct THCode2* slnscodes = slnscodes_;
+static const struct THCode2* sdstcodes = sdstcodes_;

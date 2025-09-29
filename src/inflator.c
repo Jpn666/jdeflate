@@ -20,8 +20,6 @@
 #include <jdeflate/inflator.h>
 
 
-#if !defined(AUTOINCLUDE_1)
-
 /* Deflate format definitions */
 #define DEFLT_MAXBITS 15
 #define DEFLT_WINDOWSIZE 32768
@@ -158,10 +156,6 @@ typedef union {
 	char a[-1 + (sizeof(struct TInflator) == sizeof(struct TINFLTPblc)) * 2];
 } TINFLTStaticAssert;
 
-
-#endif
-
-#if defined(AUTOINCLUDE_1)
 
 #define PRVT ((struct TINFLTPrvt*) state)
 #define PBLC ((struct TINFLTPblc*) state)
@@ -670,6 +664,13 @@ updatewindow(struct TINFLTPrvt* state)
 	}
 }
 
+
+#if LROOTBITS == 10 && DROOTBITS == 8
+
+static const uint32* dsttctable;
+static const uint32* lsttctable;
+
+#endif
 
 CTB_INLINE void
 setstatictables(struct TINFLTPrvt* state)
@@ -1804,15 +1805,14 @@ decodefast(struct TINFLTPrvt* state)
 #undef PRVT
 #undef WNDWSIZE
 
-#else
 
 /* ****************************************************************************
- * Static Tables
+ * Fixed code Tables
  *************************************************************************** */
 
 #if LROOTBITS == 10 && DROOTBITS == 8
 
-static const uint32 lsttctable[] = {
+static const uint32 lsttctable_[] = {
 	0x0100c007, 0x80500008, 0x80100008, 0x00730408,
 	0x001f0207, 0x80700008, 0x80300008, 0x80c00009,
 	0x000a0007, 0x80600008, 0x80200008, 0x80a00009,
@@ -2071,7 +2071,7 @@ static const uint32 lsttctable[] = {
 	0x800f0008, 0x808f0008, 0x804f0008, 0x80ff0009
 };
 
-static const uint32 dsttctable[] = {
+static const uint32 dsttctable_[] = {
 	0x00010005, 0x01010705, 0x00110305, 0x10010b05,
 	0x00050105, 0x04010905, 0x00410505, 0x40010d05,
 	0x00030005, 0x02010805, 0x00210405, 0x20010c05,
@@ -2138,10 +2138,7 @@ static const uint32 dsttctable[] = {
 	0x000d0205, 0x0c010a05, 0x00c10605, 0x00003025
 };
 
-#endif
-
-#define AUTOINCLUDE_1
-	#include "inflator.c"
-#undef  AUTOINCLUDE_1
+static const uint32* dsttctable = dsttctable_;
+static const uint32* lsttctable = lsttctable_;
 
 #endif
