@@ -72,16 +72,6 @@ struct TZStrmPrvt {
 #define PBLC ((struct TZStrm*)     CTB_CONSTCAST(state))
 
 
-CTB_INLINE void
-dispose_(struct TZStrmPrvt* p, void* memory, uintxx size)
-{
-	const struct TAllocator* a;
-
-	a = p->allctr;
-	a->dispose(memory, size, a->user);
-}
-
-
 #define ZSTRM_MODEMASK 0x0f00
 #define ZSTRM_TYPEMASK 0xf000
 
@@ -174,11 +164,13 @@ void
 zstrm_destroy(const TZStrm* state)
 {
 	uintxx n;
+	const struct TAllocator* a;
 
 	if (state == NULL) {
 		return;
 	}
 
+	a = PRVT->allctr;
 	if (PRVT->infltr) {
 		inflator_destroy(PRVT->infltr);
 	}
@@ -187,7 +179,7 @@ zstrm_destroy(const TZStrm* state)
 	}
 
 	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
-	dispose_(PRVT, PRVT, n);
+	a->dispose(PRVT, n, a->user);
 }
 
 void

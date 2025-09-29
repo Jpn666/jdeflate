@@ -272,37 +272,20 @@ setparameters(struct TDEFLTPrvt* state, uintxx level)
 	PRVT->maxchain   = chain;
 }
 
-
-CTB_INLINE void*
-request_(struct TDEFLTPrvt* prvt, uintxx amount)
-{
-	const struct TAllocator* a;
-
-	a = prvt->allctr;
-	return a->request(amount, a->user);
-}
-
-CTB_INLINE void
-dispose_(struct TDEFLTPrvt* prvt, void* memory, uintxx amount)
-{
-	const struct TAllocator* a;
-
-	a = prvt->allctr;
-	a->dispose(memory, amount, a->user);
-}
-
 CTB_INLINE uintxx
 allocateextra(struct TDEFLTPrvt* state)
 {
 	uintxx i;
 	uintxx n;
 	struct TDEFLTExtra* e;
+	const struct TAllocator* a;
 
+	a = PRVT->allctr;
 	if (PRVT->level > 5) {
 		struct TDEFLTPrvt2* p2;
 
-		n = sizeof(struct TDEFLTPrvt2);
-		if ((e = request_(PRVT, sizeof(struct TDEFLTExtra) + n)) == NULL) {
+		n = sizeof(struct TDEFLTExtra) + sizeof(struct TDEFLTPrvt2);
+		if ((e = a->request(n, a->user)) == NULL) {
 			return 0;
 		}
 		p2 = (struct TDEFLTPrvt2*) (e + 1);
@@ -316,8 +299,8 @@ allocateextra(struct TDEFLTPrvt* state)
 	else {
 		struct TDEFLTPrvt1* p1;
 
-		n = sizeof(struct TDEFLTPrvt1);
-		if ((e = request_(PRVT, sizeof(struct TDEFLTExtra) + n)) == NULL) {
+		n = sizeof(struct TDEFLTExtra) + sizeof(struct TDEFLTPrvt1);
+		if ((e = a->request(n, a->user)) == NULL) {
 			return 0;
 		}
 		p1 = (struct TDEFLTPrvt1*) (e + 1);
@@ -351,6 +334,9 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 	uintxx wnsize;
 	uintxx lzsize;
 	void* buffer;
+	const struct TAllocator* a;
+
+	a = PRVT->allctr;
 
 	PRVT->mhlist = NULL;
 	PRVT->mchain = NULL;
@@ -365,7 +351,7 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 		lzsize--;
 	}
 
-	buffer = request_(PRVT, wnsize * sizeof(PRVT->window[0]));
+	buffer = a->request(wnsize * sizeof(PRVT->window[0]), a->user);
 	if (buffer == NULL) {
 		return 0;
 	}
@@ -376,7 +362,7 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 	}
 
     if (lzsize) {
-	    buffer = request_(PRVT, lzsize * sizeof(PRVT->lzlist[0]));
+		buffer = a->request(lzsize * sizeof(PRVT->lzlist[0]), a->user);
 	    if (buffer == NULL) {
 		    return 0;
 	    }
@@ -523,11 +509,13 @@ void
 deflator_destroy(TDeflator* state)
 {
 	uintxx meminfo;
+	const struct TAllocator* a;
 
 	if (state == NULL) {
 		return;
 	}
 
+	a = PRVT->allctr;
 	if (PRVT->level) {
 		uintxx n;
 
@@ -537,7 +525,7 @@ deflator_destroy(TDeflator* state)
 		else {
 			n = sizeof(struct TDEFLTPrvt1) + sizeof(struct TDEFLTExtra);
 		}
-		dispose_(PRVT, PRVT->extra, n);
+		a->dispose(PRVT->extra, n, a->user);
 	}
 
 	meminfo = getmeminfo(PRVT->level);
@@ -549,13 +537,13 @@ deflator_destroy(TDeflator* state)
 		sz2 = GETLZBFFSZ(meminfo);
 
 		if (PRVT->lzlist) {
-			dispose_(PRVT, PRVT->lzlist, sz2 * sizeof(PRVT->lzlist[0]));
+			a->dispose(PRVT->lzlist, sz2 * sizeof(PRVT->lzlist[0]), a->user);
 		}
 		if (PRVT->window) {
-			dispose_(PRVT, PRVT->window, sz1 * sizeof(PRVT->window[0]));
+			a->dispose(PRVT->window, sz1 * sizeof(PRVT->window[0]), a->user);
 		}
 	}
-	dispose_(PRVT, PBLC, sizeof(struct TDEFLTPrvt));
+	a->dispose(PRVT, sizeof(struct TDEFLTPrvt), a->user);
 }
 
 #undef WNDNGUARDSZ

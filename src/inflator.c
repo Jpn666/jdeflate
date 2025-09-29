@@ -163,26 +163,6 @@ typedef union {
 
 #if defined(AUTOINCLUDE_1)
 
-
-CTB_INLINE void*
-request_(struct TINFLTPrvt* state, uintxx size)
-{
-	const struct TAllocator* a;
-
-	a = state->allctr;
-	return a->request(size, a->user);
-}
-
-CTB_INLINE void
-dispose_(struct TINFLTPrvt* state, void* memory, uintxx size)
-{
-	const struct TAllocator* a;
-
-	a = state->allctr;
-	a->dispose(memory, size, a->user);
-}
-
-
 #define PRVT ((struct TINFLTPrvt*) state)
 #define PBLC ((struct TINFLTPblc*) state)
 
@@ -255,7 +235,10 @@ inflator_reset(TInflator* state)
 
 	/* */
 	if (PRVT->tables == NULL) {
-		PRVT->tables = request_(PRVT, sizeof(struct TTINFLTTables));
+		const struct TAllocator* a;
+
+		a = PRVT->allctr;
+		PRVT->tables = a->request(sizeof(struct TTINFLTTables), a->user);
 		if (PRVT->tables == NULL) {
 			goto L_ERROR;
 		}
@@ -270,14 +253,17 @@ L_ERROR:
 void
 inflator_destroy(TInflator* state)
 {
+	const struct TAllocator* a;
+
 	if (state == NULL) {
 		return;
 	}
 
+	a = PRVT->allctr;
 	if (PRVT->tables) {
-		dispose_(PRVT, PRVT->tables, sizeof(struct TTINFLTTables));
+		a->dispose(PRVT->tables, sizeof(struct TTINFLTTables), a->user);
 	}
-	dispose_(PRVT, PBLC, sizeof(struct TINFLTPrvt) + WNDWSIZE + 32);
+	a->dispose(PRVT, sizeof(struct TINFLTPrvt) + WNDWSIZE + 32, a->user);
 }
 
 
