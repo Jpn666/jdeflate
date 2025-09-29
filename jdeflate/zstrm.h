@@ -167,7 +167,7 @@ uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
  * This function can be used to ensure that all data is written
  * to the output. When final is true the stream is finalized and no more data
  * can be written to it. */
-void zstrm_flush(const TZStrm*, bool final);
+void zstrm_flush(const TZStrm*, uintxx final);
 
 /*
  * Resets the stream to its initial state. */

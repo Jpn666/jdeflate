@@ -1203,7 +1203,7 @@ emitzlibtail(struct TZStrmPrvt* state)
 }
 
 void
-zstrm_flush(const TZStrm* state, bool final)
+zstrm_flush(const TZStrm* state, uintxx final)
 {
 	uintxx total;
 	uintxx flush;
