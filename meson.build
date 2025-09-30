@@ -61,22 +61,15 @@ newline = '''
 
 projectsources = []
 
-isunix    = false
-iswindows = false
-
-
-# System platform
-
-
 if target_machine.cpu_family() == 'x86_64'
   supported = false
 
   iswindows = false
   isunix   = false
-  if target_machine.system() == 'windows'
+  if target_machine.system() in ['windows', 'cygwin']
     iswindows = true
   else
-    if target_machine.system() != 'haiku'
+    if target_machine.system() in ['android', 'darwin', 'dragonfly', 'freebsd', 'gnu', 'linux', 'netbsd', 'openbsd', 'sunos']
       isunix = true
     endif
   endif
