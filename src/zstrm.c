@@ -1367,7 +1367,7 @@ zstrm_adler32update(uint32 adler, const uint8* data, uintxx size)
 
 /* ****************************************************************************
  * CRC32
- * Based on: create.stephan-brumme.com/crc32/ 
+ * Based on: https://create.stephan-brumme.com/crc32/ 
  *************************************************************************** */
 
 static const uint32 (*crc32_combinetable)[32];
