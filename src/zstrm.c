@@ -203,7 +203,7 @@ zstrm_reset(const TZStrm* state)
 	zstrm->public.dict   = 0;
 
 	zstrm->public.crc   = 0xffffffffu;
-	zstrm->public.adler = 1;
+	zstrm->public.adler = 1u;
 	zstrm->public.total = 0;
 	zstrm->public.usedinput = 0;
 
