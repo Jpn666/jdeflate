@@ -61,6 +61,58 @@ newline = '''
 
 projectsources = []
 
+isunix    = false
+iswindows = false
+
+
+# System platform
+
+
+if target_machine.cpu_family() == 'x86_64'
+  supported = false
+
+  iswindows = false
+  isunix   = false
+  if target_machine.system() == 'windows'
+    iswindows = true
+  else
+    if target_machine.system() != 'haiku'
+      isunix = true
+    endif
+  endif
+
+  if isunix
+    supported = true
+  endif
+  if iswindows
+    supported = true
+  endif
+
+  path = 'src/asm'
+  if supported
+    if add_languages('nasm', required: false, native: false)
+      if isunix
+        if host_machine.system() in ['darwin', 'ios', 'tvos']
+          nasmformat = 'macho64'
+        else
+          nasmformat = 'elf64'
+        endif
+      endif
+      if iswindows
+        nasmformat = 'win64'
+      endif
+
+      add_project_arguments('-f', nasmformat, language: 'nasm')
+      projectsources += [path / 'x86-64-adler32.asm']
+      projectsources += [path /   'x86-64-crc32.asm']
+
+      add_project_arguments(['-DZSTRM_ADLER32EXTERNALASM', '-DZSTRM_CRC32EXTERNALASM'], language: 'c')
+    else
+      warning('NASM not found, using C fallback code')
+    endif
+  endif
+endif
+
 base = 'src'
 r = run_command(python, script, base, '.c', check: true).stdout()
 foreach file: r.split(newline)
