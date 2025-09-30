@@ -68,10 +68,6 @@ struct TZStrmPrvt {
 };
 
 
-#define PRVT ((struct TZStrmPrvt*) CTB_CONSTCAST(state))
-#define PBLC ((struct TZStrm*)     CTB_CONSTCAST(state))
-
-
 #define ZSTRM_MODEMASK 0x0f00
 #define ZSTRM_TYPEMASK 0xf000
 
@@ -81,7 +77,7 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 	uint32 smode;
 	uint32 stype;
 	uintxx n;
-	struct TZStrm* state;
+	struct TZStrmPrvt* zstrm;
 
 	smode = flags & ZSTRM_MODEMASK;
 	stype = flags & ZSTRM_TYPEMASK;
@@ -117,138 +113,140 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 	}
 
 	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
-	state = allctr->request(n, allctr->user);
-	if (state == NULL) {
+	zstrm = allctr->request(n, allctr->user);
+	if (zstrm == NULL) {
 		return NULL;
 	}
-	PRVT->allctr = allctr;
+	zstrm->allctr = allctr;
 
 	if (smode == ZSTRM_INFLATE) {
-		PRVT->defltr = NULL;
-		PRVT->infltr = inflator_create(0, allctr);
-		if (PRVT->infltr == NULL) {
-			zstrm_destroy(PBLC);
+		zstrm->defltr = NULL;
+		zstrm->infltr = inflator_create(0, allctr);
+		if (zstrm->infltr == NULL) {
+			zstrm_destroy(&zstrm->public);
 			return NULL;
 		}
 	}
 	if (smode == ZSTRM_DEFLATE) {
-		PRVT->infltr = NULL;
-		PRVT->defltr = deflator_create(0, level, allctr);
-		if (PRVT->defltr == NULL) {
-			zstrm_destroy(PBLC);
+		zstrm->infltr = NULL;
+		zstrm->defltr = deflator_create(0, level, allctr);
+		if (zstrm->defltr == NULL) {
+			zstrm_destroy(&zstrm->public);
 			return NULL;
 		}
-		PBLC->level = (int32) level;
+		zstrm->public.level = (int32) level;
 	}
 
-	PBLC->smode = smode;
+	zstrm->public.smode = smode;
 	if (smode == ZSTRM_DEFLATE) {
-		PBLC->stype = stype;
+		zstrm->public.stype = stype;
 
-		PRVT->doadler = (flags & ZSTRM_DOADLER) != 0;
-		PRVT->docrc   = (flags & ZSTRM_DOCRC  ) != 0;
+		zstrm->doadler = (flags & ZSTRM_DOADLER) != 0;
+		zstrm->docrc   = (flags & ZSTRM_DOCRC  ) != 0;
 		if (stype != ZSTRM_DFLT) {
 			if (stype == ZSTRM_ZLIB)
-				PRVT->doadler = 1;
+				zstrm->doadler = 1;
 			if (stype == ZSTRM_GZIP)
-				PRVT->docrc = 1;
+				zstrm->docrc = 1;
 		}
 	}
 
-	PBLC->flags = (uint32) flags;
-	zstrm_reset(state);
-	return state;
+	zstrm->public.flags = (uint32) flags;
+	zstrm_reset(&zstrm->public);
+	return (const struct TZStrm*) zstrm;
 }
 
 void
 zstrm_destroy(const TZStrm* state)
 {
+	struct TZStrmPrvt* zstrm;
 	uintxx n;
-	const struct TAllocator* a;
 
 	if (state == NULL) {
 		return;
 	}
 
-	a = PRVT->allctr;
-	if (PRVT->infltr) {
-		inflator_destroy(PRVT->infltr);
+	zstrm = CTB_CONSTCAST(state);
+	if (zstrm->infltr) {
+		inflator_destroy(zstrm->infltr);
 	}
-	if (PRVT->defltr) {
-		deflator_destroy(PRVT->defltr);
+	if (zstrm->defltr) {
+		deflator_destroy(zstrm->defltr);
 	}
 
 	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
-	a->dispose(PRVT, n, a->user);
+	zstrm->allctr->dispose(zstrm, n, zstrm->allctr->user);
 }
 
 void
 zstrm_reset(const TZStrm* state)
 {
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state);
 
+	zstrm = CTB_CONSTCAST(state);
+
 	/* public fields */
-	PBLC->state = 0;
-	PBLC->error = 0;
-	if (PBLC->smode == ZSTRM_INFLATE) {
-		PBLC->stype = 0;
+	zstrm->public.state = 0;
+	zstrm->public.error = 0;
+	if (zstrm->public.smode == ZSTRM_INFLATE) {
+		zstrm->public.stype = 0;
 	}
+	zstrm->public.dictid = 0;
+	zstrm->public.dict   = 0;
 
-	PBLC->dictid = 0;
-	PBLC->dict   = 0;
-
-	PBLC->crc   = 0xffffffff;
-	PBLC->adler = 1;
-	PBLC->total = 0;
-
-	PBLC->usedinput = 0;
+	zstrm->public.crc   = 0xffffffffu;
+	zstrm->public.adler = 1;
+	zstrm->public.total = 0;
+	zstrm->public.usedinput = 0;
 
 	/* private fields */
-	PRVT->result = 0;
-	if (PBLC->smode == ZSTRM_INFLATE) {
-		PRVT->doadler = (PBLC->flags & ZSTRM_DOADLER) != 0;
-		PRVT->docrc   = (PBLC->flags & ZSTRM_DOCRC  ) != 0;
-
-		inflator_reset(PRVT->infltr);
+	zstrm->result = 0;
+	if (zstrm->public.smode == ZSTRM_INFLATE) {
+		zstrm->doadler = (zstrm->public.flags & ZSTRM_DOADLER) != 0;
+		zstrm->docrc   = (zstrm->public.flags & ZSTRM_DOCRC  ) != 0;
+		inflator_reset(zstrm->infltr);
 	}
 	else {
-		deflator_reset(PRVT->defltr);
+		deflator_reset(zstrm->defltr);
 	}
 
 	/* IO */
-	PRVT->iofn = NULL;
-	PRVT->user = NULL;
-	PRVT->input    = NULL;
-	PRVT->inputend = NULL;
+	zstrm->iofn = NULL;
+	zstrm->user = NULL;
+	zstrm->input    = NULL;
+	zstrm->inputend = NULL;
 
-	PRVT->source = NULL;
-	PRVT->sbgn   = NULL;
-	PRVT->send   = NULL;
-	PRVT->target = NULL;
-	PRVT->tbgn   = NULL;
-	PRVT->tend   = NULL;
+	zstrm->source = NULL;
+	zstrm->sbgn = NULL;
+	zstrm->send = NULL;
+	zstrm->target = NULL;
+	zstrm->tbgn = NULL;
+	zstrm->tend = NULL;
 }
 
 
-#define SETERROR(ERROR) (PBLC->error = (ERROR))
-#define SETSTATE(STATE) (PBLC->state = (STATE))
+#define SETERROR(ERROR) (zstrm->public.error = (ERROR))
+#define SETSTATE(STATE) (zstrm->public.state = (STATE))
 
 void
 zstrm_setsource(const TZStrm* state, const uint8* source, uintxx size)
 {
 	uint8 t[1];
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && source && size);
 
-	if (PBLC->smode != ZSTRM_INFLATE || PBLC->state) {
+	zstrm = CTB_CONSTCAST(state);
+	if (zstrm->public.smode != ZSTRM_INFLATE || zstrm->public.state) {
 		SETSTATE(4);
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return;
 	}
 	SETSTATE(1);
-	PRVT->input = PRVT->inputend = source;
-	PRVT->inputend += size;
+	zstrm->input = zstrm->inputend = source;
+	zstrm->inputend += size;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -257,18 +255,20 @@ void
 zstrm_setsourcefn(const TZStrm* state, TZStrmIFn fn, void* user)
 {
 	uint8 t[1];
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && fn);
 
-	if (PBLC->smode != ZSTRM_INFLATE || PBLC->state) {
+	zstrm = CTB_CONSTCAST(state);
+	if (zstrm->public.smode != ZSTRM_INFLATE || zstrm->public.state) {
 		SETSTATE(4);
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return;
 	}
 	SETSTATE(1);
-	PRVT->user = user;
-	PRVT->iofn = (TZStrmIOFn) fn;
+	zstrm->user = user;
+	zstrm->iofn = (TZStrmIOFn) fn;
 
 	zstrm_inflate(state, t, 0);
 }
@@ -276,18 +276,20 @@ zstrm_setsourcefn(const TZStrm* state, TZStrmIFn fn, void* user)
 void
 zstrm_settargetfn(const TZStrm* state, TZStrmOFn fn, void* user)
 {
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && fn);
 
-	if (PBLC->smode != ZSTRM_DEFLATE || PBLC->state) {
+	zstrm = CTB_CONSTCAST(state);
+	if (zstrm->public.smode != ZSTRM_DEFLATE || zstrm->public.state) {
 		SETSTATE(4);
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return;
 	}
 	SETSTATE(1);
-	PRVT->user = user;
-	PRVT->iofn = (TZStrmIOFn) fn;
+	zstrm->user = user;
+	zstrm->iofn = (TZStrmIOFn) fn;
 }
 
 static uintxx parsehead(struct TZStrmPrvt*);
@@ -295,75 +297,77 @@ static uintxx parsehead(struct TZStrmPrvt*);
 void
 zstrm_setdctn(const TZStrm* state, const uint8* dict, uintxx size)
 {
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && dict && size);
 
-	if (PBLC->state == 0 || PBLC->state == 4) {
+	zstrm = CTB_CONSTCAST(state);
+	if (zstrm->public.state == 0 || zstrm->public.state == 4) {
 		goto L_ERROR;
 	}
 
-	if (PBLC->smode == ZSTRM_INFLATE) {
-		if (PBLC->state == 1) {
-			if (PRVT->input) {
-				PRVT->sbgn = CTB_CONSTCAST(PRVT->input);
-				PRVT->send = CTB_CONSTCAST(PRVT->inputend);
+	if (zstrm->public.smode == ZSTRM_INFLATE) {
+		if (zstrm->public.state == 1) {
+			if (zstrm->input) {
+				zstrm->sbgn = CTB_CONSTCAST(zstrm->input);
+				zstrm->send = CTB_CONSTCAST(zstrm->inputend);
 			}
 
-			if (parsehead(PRVT) == 0) {
+			if (parsehead(zstrm) == 0) {
 				goto L_ERROR;
 			}
 		}
 
-		if (PBLC->stype == ZSTRM_GZIP) {
+		if (zstrm->public.stype == ZSTRM_GZIP) {
 			goto L_ERROR;
 		}
 
-		if (PBLC->state == 2) {
+		if (zstrm->public.state == 2) {
 			uint32 adler;
 
 			adler = adler32_update(1, dict, size);
-			if (adler != PBLC->dictid) {
+			if (adler != zstrm->public.dictid) {
 				SETERROR(ZSTRM_EBADDICT);
 				goto L_ERROR;
 			}
 		}
 		else {
-			if (PBLC->state == 3) {
+			if (zstrm->public.state == 3) {
 				goto L_ERROR;
 			}
 		}
 		SETSTATE(3);
-		inflator_setdctnr(PRVT->infltr, dict, size);
+		inflator_setdctnr(zstrm->infltr, dict, size);
 	}
 
-	if (PBLC->smode == ZSTRM_DEFLATE) {
-		if (PBLC->state != 1) {
+	if (zstrm->public.smode == ZSTRM_DEFLATE) {
+		if (zstrm->public.state != 1) {
 			goto L_ERROR;
 		}
-		if (PBLC->stype & ZSTRM_GZIP || PBLC->dict == 1) {
+		if (zstrm->public.stype & ZSTRM_GZIP || zstrm->public.dict == 1) {
 			goto L_ERROR;
 		}
 
-		PBLC->dictid = adler32_update(1, dict, size);
-		PBLC->dict   = 1;
-		deflator_setdctnr(PRVT->defltr, dict, size);
+		zstrm->public.dictid = adler32_update(1, dict, size);
+		zstrm->public.dict   = 1;
+		deflator_setdctnr(zstrm->defltr, dict, size);
 	}
 	return;
 
 L_ERROR:
-	if (PBLC->error == 0) {
+	if (zstrm->public.error == 0) {
 		SETERROR(ZSTRM_EINCORRECTUSE);
 	}
 	SETSTATE(4);
 }
 
 CTB_INLINE void
-updatechecksums(struct TZStrmPrvt* state, const uint8* buffer, uintxx n)
+updatechecksums(struct TZStrmPrvt* zstrm, const uint8* buffer, uintxx n)
 {
-	if (PRVT->docrc) {
-		PBLC->crc = crc32_update(PBLC->crc, buffer, n);
+	if (zstrm->docrc) {
+		zstrm->public.crc = crc32_update(zstrm->public.crc, buffer, n);
 	}
-	if (PRVT->doadler) {
-		PBLC->adler = adler32_update(PBLC->adler, buffer, n);
+	if (zstrm->doadler) {
+		zstrm->public.adler = adler32_update(zstrm->public.adler, buffer, n);
 	}
 }
 
@@ -373,71 +377,71 @@ updatechecksums(struct TZStrmPrvt* state, const uint8* buffer, uintxx n)
  *************************************************************************** */
 
 CTB_INLINE uint8
-fetchbyte(struct TZStrmPrvt* state)
+fetchbyte(struct TZStrmPrvt* zstrm)
 {
-	if (PBLC->error) {
+	if (zstrm->public.error) {
 		return 0;
 	}
 
-	if (CTB_EXPECT1(PRVT->sbgn < PRVT->send)) {
-		return *PRVT->sbgn++;
+	if (CTB_EXPECT1(zstrm->sbgn < zstrm->send)) {
+		return *zstrm->sbgn++;
 	}
-	if (PRVT->iofn) {
+	if (zstrm->iofn) {
 		intxx n;
 
-		n = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->user);
+		n = zstrm->iofn(zstrm->iobuffer, IOBFFRSIZE, zstrm->user);
 		if (CTB_EXPECT1(n != 0)) {
 			if ((uintxx) n > IOBFFRSIZE) {
 				SETERROR(ZSTRM_EIOERROR);
 				return 0;
 			}
 
-			PRVT->sbgn = PRVT->iobuffer;
-			PRVT->send = PRVT->iobuffer + n;
-			return *PRVT->sbgn++;
+			zstrm->sbgn = zstrm->iobuffer;
+			zstrm->send = zstrm->iobuffer + n;
+			return *zstrm->sbgn++;
 		}
 	}
 	else {
 		SETERROR(ZSTRM_ESRCEXHSTD);
 	}
 
-	if (PBLC->error == 0) {
+	if (zstrm->public.error == 0) {
 		SETERROR(ZSTRM_EBADDATA);
 	}
 	return 0;
 }
 
 static bool
-parsegziphead(struct TZStrmPrvt* state)
+parsegziphead(struct TZStrmPrvt* zstrm)
 {
 	uint32 id1;
 	uint32 id2;
 	uint32 flags;
 
-	id1 = fetchbyte(PRVT);
-	id2 = fetchbyte(PRVT);
+	id1 = fetchbyte(zstrm);
+	id2 = fetchbyte(zstrm);
 	if (id1 != 0x1f || id2 != 0x8b) {
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EBADDATA);
         }
 		return 0;
 	}
 
 	/* compression method (deflate only) */
-	if (fetchbyte(PRVT) != 0x08) {
-		if (PBLC->error == 0) {
+	if (fetchbyte(zstrm) != 0x08) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EBADDATA);
 		}
 		return 0;
 	}
 
-	flags = fetchbyte(PRVT);
-	fetchbyte(PRVT);
-	fetchbyte(PRVT);
-	fetchbyte(PRVT);
-	fetchbyte(PRVT);
-	fetchbyte(PRVT);
-	fetchbyte(PRVT);
+	flags = fetchbyte(zstrm);
+	fetchbyte(zstrm);
+	fetchbyte(zstrm);
+	fetchbyte(zstrm);
+	fetchbyte(zstrm);
+	fetchbyte(zstrm);
+	fetchbyte(zstrm);
 
 	/* extra */
 	if (flags & 0x04) {
@@ -445,28 +449,28 @@ parsegziphead(struct TZStrmPrvt* state)
 		uint32 b;
 		uint32 length;
 
-		a = fetchbyte(PRVT);
-		b = fetchbyte(PRVT);
+		a = fetchbyte(zstrm);
+		b = fetchbyte(zstrm);
 		for (length = a | (b << 0x08); length; length--) {
-			fetchbyte(PRVT);
+			fetchbyte(zstrm);
 		}
 	}
 
 	/* name, comment */
 	if (flags & 0x08) {
-		while (fetchbyte(PRVT));
+		while (fetchbyte(zstrm));
 	}
 	if (flags & 0x10) {
-		while (fetchbyte(PRVT));
+		while (fetchbyte(zstrm));
 	}
 
 	/* header crc16 */
 	if (flags & 0x02) {
-		fetchbyte(PRVT);
-		fetchbyte(PRVT);
+		fetchbyte(zstrm);
+		fetchbyte(zstrm);
 	}
 
-	if (PBLC->error) {
+	if (zstrm->public.error) {
 		return 0;
 	}
 	return 1;
@@ -475,14 +479,14 @@ parsegziphead(struct TZStrmPrvt* state)
 #define TOI32(A, B, C, D)  ((A) | (B << 0x08) | (C << 0x10) | (D << 0x18))
 
 static bool
-parsezlibhead(struct TZStrmPrvt* state)
+parsezlibhead(struct TZStrmPrvt* zstrm)
 {
 	uint32 a;
 	uint32 b;
 
-	a = fetchbyte(PRVT);
-	b = fetchbyte(PRVT);
-	if (PBLC->error == 0) {
+	a = fetchbyte(zstrm);
+	b = fetchbyte(zstrm);
+	if (zstrm->public.error == 0) {
 		uintxx cm;
 		uintxx ci;
 
@@ -501,21 +505,21 @@ parsezlibhead(struct TZStrmPrvt* state)
 				uint32 c;
 				uint32 d;
 
-				d = fetchbyte(PRVT);
-				c = fetchbyte(PRVT);
-				b = fetchbyte(PRVT);
-				a = fetchbyte(PRVT);
-				if (PBLC->error) {
+				d = fetchbyte(zstrm);
+				c = fetchbyte(zstrm);
+				b = fetchbyte(zstrm);
+				a = fetchbyte(zstrm);
+				if (zstrm->public.error) {
 					return 0;
 				}
-				PBLC->dictid = TOI32(a, b, c, d);
+				zstrm->public.dictid = TOI32(a, b, c, d);
 
 				SETSTATE(2);
 				return 1;
 			}
 		}
 		else {
-			if (PBLC->error == 0) {
+			if (zstrm->public.error == 0) {
 				SETERROR(ZSTRM_EBADDATA);
 			}
 			return 0;
@@ -529,13 +533,13 @@ parsezlibhead(struct TZStrmPrvt* state)
 }
 
 static uintxx
-parsehead(struct TZStrmPrvt* state)
+parsehead(struct TZStrmPrvt* zstrm)
 {
 	uint32 stype;
 	uint32 head;
 
-	head = fetchbyte(PRVT);
-	if (PBLC->error) {
+	head = fetchbyte(zstrm);
+	if (zstrm->public.error) {
 		return 0;
 	}
 
@@ -559,29 +563,29 @@ parsehead(struct TZStrmPrvt* state)
 		}
 	}
 
-	if ((PBLC->flags & stype) == 0) {
+	if ((zstrm->public.flags & stype) == 0) {
 		SETERROR(ZSTRM_EFORMAT);
 		return 0;
 	}
-	PBLC->stype = stype;
+	zstrm->public.stype = stype;
 
-	PRVT->sbgn--;
-	switch (PBLC->stype) {
-		case ZSTRM_GZIP: PRVT->docrc   = 1; parsegziphead(PRVT); break;
-		case ZSTRM_ZLIB: PRVT->doadler = 1; parsezlibhead(PRVT); break;
+	zstrm->sbgn--;
+	switch (zstrm->public.stype) {
+		case ZSTRM_GZIP: zstrm->docrc   = 1; parsegziphead(zstrm); break;
+		case ZSTRM_ZLIB: zstrm->doadler = 1; parsezlibhead(zstrm); break;
 		case ZSTRM_DFLT:
 			break;
 	}
-	if (PBLC->error) {
+	if (zstrm->public.error) {
 		return 0;
 	}
 
-	PBLC->usedinput += (uintxx) (PRVT->sbgn - PRVT->source);
+	zstrm->public.usedinput += (uintxx) (zstrm->sbgn - zstrm->source);
 	return 1;
 }
 
 CTB_INLINE void
-checkgziptail(struct TZStrmPrvt* state)
+checkgziptail(struct TZStrmPrvt* zstrm)
 {
 	uint32 crc;
 	uint32 total;
@@ -591,14 +595,14 @@ checkgziptail(struct TZStrmPrvt* state)
 	uint32 d;
 
 	/* crc32 */
-	a = fetchbyte(PRVT);
-	b = fetchbyte(PRVT);
-	c = fetchbyte(PRVT);
-	d = fetchbyte(PRVT);
+	a = fetchbyte(zstrm);
+	b = fetchbyte(zstrm);
+	c = fetchbyte(zstrm);
+	d = fetchbyte(zstrm);
 	crc = TOI32(a, b, c, d);
 
-	if (PBLC->error == 0) {
-		if (crc != PBLC->crc) {
+	if (zstrm->public.error == 0) {
+		if (crc != zstrm->public.crc) {
 			SETERROR(ZSTRM_ECHECKSUM);
 			return;
 		}
@@ -608,14 +612,14 @@ checkgziptail(struct TZStrmPrvt* state)
 	}
 
 	/* isize */
-	a = fetchbyte(PRVT);
-	b = fetchbyte(PRVT);
-	c = fetchbyte(PRVT);
-	d = fetchbyte(PRVT);
+	a = fetchbyte(zstrm);
+	b = fetchbyte(zstrm);
+	c = fetchbyte(zstrm);
+	d = fetchbyte(zstrm);
 	total = TOI32(a, b, c, d);
 
-	if (total != PBLC->total) {
-		if (PBLC->error) {
+	if (total != zstrm->public.total) {
+		if (zstrm->public.error) {
 			return;
 		}
 		SETERROR(ZSTRM_EBADDATA);
@@ -623,7 +627,7 @@ checkgziptail(struct TZStrmPrvt* state)
 }
 
 CTB_INLINE void
-checkzlibtail(struct TZStrmPrvt* state)
+checkzlibtail(struct TZStrmPrvt* zstrm)
 {
 	uint32 a;
 	uint32 b;
@@ -631,14 +635,14 @@ checkzlibtail(struct TZStrmPrvt* state)
 	uint32 d;
 	uint32 adler;
 
-	d = fetchbyte(PRVT);
-	c = fetchbyte(PRVT);
-	b = fetchbyte(PRVT);
-	a = fetchbyte(PRVT);
+	d = fetchbyte(zstrm);
+	c = fetchbyte(zstrm);
+	b = fetchbyte(zstrm);
+	a = fetchbyte(zstrm);
 	adler = TOI32(a, b, c, d);
 
-	if (adler != PBLC->adler) {
-		if (PBLC->error == 0) {
+	if (adler != zstrm->public.adler) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_ECHECKSUM);
 		}
 		return;
@@ -653,35 +657,38 @@ static uintxx inflate(struct TZStrmPrvt*, uint8*, uintxx);
 uintxx
 zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 {
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && target);
 
+	zstrm = CTB_CONSTCAST(state);
+
 	/* check the stream mode */
-	if (CTB_EXPECT0(PRVT->infltr == NULL)) {
+	if (CTB_EXPECT0(zstrm->infltr == NULL)) {
 		SETSTATE(4);
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
 
-	if (CTB_EXPECT1(PBLC->state == 3)) {
-		return inflate(PRVT, target, n);
+	if (CTB_EXPECT1(zstrm->public.state == 3)) {
+		return inflate(zstrm, target, n);
 	}
 
-	if (PBLC->state == 1) {
+	if (zstrm->public.state == 1) {
 		uintxx total;
 
-		if (PRVT->input) {
-			PRVT->sbgn = CTB_CONSTCAST(PRVT->input);
-			PRVT->send = CTB_CONSTCAST(PRVT->inputend);
+		if (zstrm->input) {
+			zstrm->sbgn = CTB_CONSTCAST(zstrm->input);
+			zstrm->send = CTB_CONSTCAST(zstrm->inputend);
 		}
-		PRVT->result = INFLT_TGTEXHSTD;
+		zstrm->result = INFLT_TGTEXHSTD;
 
-		if (parsehead(PRVT) == 0) {
+		if (parsehead(zstrm) == 0) {
 			SETSTATE(4);
 		}
 		else {
-			if (PBLC->state == 2) {
+			if (zstrm->public.state == 2) {
 				/* this allows us to check if we need a dictionary by passing
 				 * n = 0 when the state is 1 */
 				if (n == 0) {
@@ -690,21 +697,21 @@ zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 				SETERROR(ZSTRM_EMISSINGDICT);
 			}
 		}
-		if (PBLC->error) {
+		if (zstrm->public.error) {
 			SETSTATE(4);
 			return 0;
 		}
 
-		total = (uintxx) (PRVT->send - PRVT->sbgn);
-		inflator_setsrc(PRVT->infltr, PRVT->sbgn, total);
+		total = (uintxx) (zstrm->send - zstrm->sbgn);
+		inflator_setsrc(zstrm->infltr, zstrm->sbgn, total);
 
 		SETSTATE(3);
 		if (n != 0) {
-			return inflate(PRVT, target, n);
+			return inflate(zstrm, target, n);
 		}
 	}
 	else {
-		if (PBLC->state == 2) {
+		if (zstrm->public.state == 2) {
 			SETERROR(ZSTRM_EMISSINGDICT);
 			SETSTATE(4);
 		}
@@ -733,7 +740,7 @@ struct TINFLTPrvt {
 };
 
 static uintxx
-inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
+inflate(struct TZStrmPrvt* zstrm, uint8* buffer, uintxx total)
 {
 	uint8* bbgn;
 	uint8* tbgn;
@@ -741,7 +748,7 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 	uintxx n;
 	struct TInflator* infltr;
 
-	infltr = PRVT->infltr;
+	infltr = zstrm->infltr;
 
 	bbgn = buffer;
 	tbgn = infltr->target;
@@ -799,11 +806,11 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 			continue;
 		}
 
-		if (PRVT->result == INFLT_SRCEXHSTD) {
-			if (PRVT->iofn) {
+		if (zstrm->result == INFLT_SRCEXHSTD) {
+			if (zstrm->iofn) {
 				intxx r;
 
-				r = PRVT->iofn(PRVT->iobuffer, IOBFFRSIZE, PRVT->user);
+				r = zstrm->iofn(zstrm->iobuffer, IOBFFRSIZE, zstrm->user);
 				if (CTB_EXPECT1(r != 0)) {
 					if (CTB_EXPECT0((uintxx) r > IOBFFRSIZE)) {
 						SETERROR(ZSTRM_EIOERROR);
@@ -811,9 +818,9 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 						break;
 					}
 
-					inflator_setsrc(infltr, PRVT->iobuffer, (uintxx) r);
-					PRVT->sbgn = CTB_CONSTCAST(infltr->sbgn);
-					PRVT->send = CTB_CONSTCAST(infltr->send);
+					inflator_setsrc(infltr, zstrm->iobuffer, (uintxx) r);
+					zstrm->sbgn = CTB_CONSTCAST(infltr->sbgn);
+					zstrm->send = CTB_CONSTCAST(infltr->send);
 				}
 				else {
 					SETERROR(ZSTRM_EBADDATA);
@@ -828,26 +835,29 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 			}
 		}
 		else {
-			if (PRVT->result == INFLT_OK) {
+			if (zstrm->result == INFLT_OK) {
+				uintxx used;
+
 				/* end of the stream */
-				PRVT->sbgn += inflator_srcend(infltr);
-				if (PRVT->docrc) {
-					CRC32_FINALIZE(PBLC->crc);
+				zstrm->sbgn += inflator_srcend(infltr);
+				if (zstrm->docrc) {
+					zstrm->public.crc = zstrm->public.crc ^ 0xffffffffu;
 				}
 
 				n = (uintxx) (buffer - bbgn);
-				PBLC->total += n;
-				switch (PBLC->stype) {
-					case ZSTRM_GZIP: checkgziptail(PRVT); break;
-					case ZSTRM_ZLIB: checkzlibtail(PRVT); break;
+				zstrm->public.total += n;
+				switch (zstrm->public.stype) {
+					case ZSTRM_GZIP: checkgziptail(zstrm); break;
+					case ZSTRM_ZLIB: checkzlibtail(zstrm); break;
 				}
 
-				PBLC->usedinput = (uintxx) (PRVT->sbgn - PRVT->source);
+				used = (uintxx) (zstrm->sbgn - zstrm->source);
+				zstrm->public.usedinput = used;
 				SETSTATE(4);
 				return n;
 			}
 
-			if (PRVT->result == INFLT_ERROR) {
+			if (zstrm->result == INFLT_ERROR) {
 				SETERROR(ZSTRM_EDEFLATE);
 				SETSTATE(4);
 				break;
@@ -863,11 +873,11 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 		}
 		((struct TINFLTPrvt*) infltr)->towindow = towindow;
 
-		PRVT->result = inflator_inflate(infltr, PRVT->source != NULL);
+		zstrm->result = inflator_inflate(infltr, zstrm->source != NULL);
 		n = inflator_tgtend(infltr);
 
-		PBLC->usedinput += inflator_srcend(infltr);
-		if (PRVT->result == INFLT_ERROR) {
+		zstrm->public.usedinput += inflator_srcend(infltr);
+		if (zstrm->result == INFLT_ERROR) {
 			if (n != 0) {
 				SETERROR(ZSTRM_EDEFLATE);
 				SETSTATE(4);
@@ -877,7 +887,7 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 		}
 
 		if (towindow == 0) {
-			updatechecksums(PRVT, buffer, n);
+			updatechecksums(zstrm, buffer, n);
 			buffer += n; total -= n;
 			tbgn = NULL;
 			tend = NULL;
@@ -886,14 +896,14 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
 
 		tbgn = infltr->tbgn;
 		tend = infltr->tbgn + n;
-		updatechecksums(PRVT, tbgn, n);
+		updatechecksums(zstrm, tbgn, n);
 	}
 
 	infltr->target = tbgn;
 	infltr->tend   = tend;
 
 	n = (uintxx) (buffer - bbgn);
-	PBLC->total += n;
+	zstrm->public.total += n;
 	return n;
 }
 
@@ -903,66 +913,66 @@ inflate(struct TZStrmPrvt* state, uint8* buffer, uintxx total)
  *************************************************************************** */
 
 CTB_INLINE void
-emittarget(struct TZStrmPrvt* state)
+emittarget(struct TZStrmPrvt* zstrm)
 {
 	uintxx total;
 	intxx r;
 
-	total = (uintxx) (PRVT->tbgn - PRVT->target);
+	total = (uintxx) (zstrm->tbgn - zstrm->target);
 	if (total == 0) {
 		return;
 	}
 
-	r = PRVT->iofn(PRVT->target, total, PRVT->user);
+	r = zstrm->iofn(zstrm->target, total, zstrm->user);
 	if ((uintxx) r > total || (uintxx) r != total) {
 		SETERROR(ZSTRM_EIOERROR);
 		return;
 	}
-	PRVT->tbgn = PRVT->target;
+	zstrm->tbgn = zstrm->target;
 }
 
 static void
-emitbyte(struct TZStrmPrvt* state, uint8 value)
+emitbyte(struct TZStrmPrvt* zstrm, uint8 value)
 {
-	if (PBLC->error != 0) {
+	if (zstrm->public.error != 0) {
 		return;
 	}
 
-	if (CTB_EXPECT1(PRVT->tbgn < PRVT->tend)) {
-		*PRVT->tbgn++ = value;
+	if (CTB_EXPECT1(zstrm->tbgn < zstrm->tend)) {
+		*zstrm->tbgn++ = value;
 	}
 	else {
-		emittarget(PRVT);
-		if (CTB_EXPECT0(PBLC->error)) {
+		emittarget(zstrm);
+		if (CTB_EXPECT0(zstrm->public.error)) {
 			return;
 		}
-		*PRVT->tbgn++ = value;
+		*zstrm->tbgn++ = value;
 	}
 }
 
 CTB_INLINE void
-emitgziphead(struct TZStrmPrvt* state)
+emitgziphead(struct TZStrmPrvt* zstrm)
 {
 	/* file ID */
-	emitbyte(PRVT, 0x1f);
-	emitbyte(PRVT, 0x8b);
+	emitbyte(zstrm, 0x1f);
+	emitbyte(zstrm, 0x8b);
 
 	/* compression method */
-	emitbyte(PRVT, 0x08);
+	emitbyte(zstrm, 0x08);
 
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
-	emitbyte(PRVT, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
+	emitbyte(zstrm, 0x00);
 
-	emittarget(PRVT);
+	emittarget(zstrm);
 }
 
 CTB_INLINE void
-emitzlibhead(struct TZStrmPrvt* state)
+emitzlibhead(struct TZStrmPrvt* zstrm)
 {
 	uintxx a;
 	uintxx b;
@@ -970,25 +980,25 @@ emitzlibhead(struct TZStrmPrvt* state)
 	/* compression method + log(window size) - 8 */
 	a = 0x78;
 	b = 0;
-	if (PBLC->dict) {
+	if (zstrm->public.dict) {
 		b |= 1 << 5;
 	}
 
 	/* fcheck */
 	b = b + (31 - ((a << 8) | b % 31));
 
-	emitbyte(PRVT, (uint8) a);
-	emitbyte(PRVT, (uint8) b);
-	if (PBLC->dict) {
+	emitbyte(zstrm, (uint8) a);
+	emitbyte(zstrm, (uint8) b);
+	if (zstrm->public.dict) {
 		uint32 n;
 
-		n = PBLC->dictid;
-		emitbyte(PRVT, (uint8) (n >> 0x18));
-		emitbyte(PRVT, (uint8) (n >> 0x10));
-		emitbyte(PRVT, (uint8) (n >> 0x08));
-		emitbyte(PRVT, (uint8) (n >> 0x00));
+		n = zstrm->public.dictid;
+		emitbyte(zstrm, (uint8) (n >> 0x18));
+		emitbyte(zstrm, (uint8) (n >> 0x10));
+		emitbyte(zstrm, (uint8) (n >> 0x08));
+		emitbyte(zstrm, (uint8) (n >> 0x00));
 	}
-	emittarget(PRVT);
+	emittarget(zstrm);
 }
 
 
@@ -1000,87 +1010,89 @@ static uintxx deflate(struct TZStrmPrvt*, const uint8*, uintxx);
 uintxx
 zstrm_deflate(const TZStrm* state, const void* source, uintxx n)
 {
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && source);
 
+	zstrm = CTB_CONSTCAST(state);
 	/* check the stream mode */
-	if (CTB_EXPECT0(PRVT->defltr == NULL)) {
+	if (CTB_EXPECT0(zstrm->defltr == NULL)) {
 		SETSTATE(4);
-		if (PBLC->error == 0) {
+		if (zstrm->public.error == 0) {
 			SETERROR(ZSTRM_EINCORRECTUSE);
 		}
 		return 0;
 	}
 
-	if (CTB_EXPECT1(PBLC->state == 3)) {
+	if (CTB_EXPECT1(zstrm->public.state == 3)) {
 		uintxx r;
 
-		r = deflate(PRVT, source, n);
-		PBLC->total += r;
+		r = deflate(zstrm, source, n);
+		zstrm->public.total += r;
 		return r;
 	}
-	if (CTB_EXPECT1(PBLC->state == 1 || PBLC->state == 2)) {
-		PRVT->source = PRVT->iobuffer;
-		PRVT->target = PRVT->iobuffer + DEFLTBFFRSIZE;
+	if (CTB_EXPECT1(zstrm->public.state == 1 || zstrm->public.state == 2)) {
+		zstrm->source = zstrm->iobuffer;
+		zstrm->target = zstrm->iobuffer + DEFLTBFFRSIZE;
 
-		PRVT->sbgn = PRVT->source;
-		PRVT->tbgn = PRVT->target;
-		PRVT->send = PRVT->source + DEFLTBFFRSIZE;
-		PRVT->tend = PRVT->target + DEFLTBFFRSIZE;
+		zstrm->sbgn = zstrm->source;
+		zstrm->tbgn = zstrm->target;
+		zstrm->send = zstrm->source + DEFLTBFFRSIZE;
+		zstrm->tend = zstrm->target + DEFLTBFFRSIZE;
 
-		switch (PBLC->stype) {
-			case ZSTRM_GZIP: emitgziphead(PRVT); break;
-			case ZSTRM_ZLIB: emitzlibhead(PRVT); break;
+		switch (zstrm->public.stype) {
+			case ZSTRM_GZIP: emitgziphead(zstrm); break;
+			case ZSTRM_ZLIB: emitzlibhead(zstrm); break;
 		}
-		if (PBLC->error) {
+		if (zstrm->public.error) {
 			SETSTATE(4);
 			return 0;
 		}
 
 		SETSTATE(3);
-		return zstrm_deflate(PBLC, source, n);
+		return zstrm_deflate(state, source, n);
 	}
 	return 0;
 }
 
 static void
-dochunk(struct TZStrmPrvt* state, uintxx flush, const uint8* source, uintxx n)
+dochunk(struct TZStrmPrvt* zstrm, uintxx flush, const uint8* source, uintxx n)
 {
 	uintxx result;
 	uintxx total;
 	struct TDeflator* defltr;
 
-	defltr = PRVT->defltr;
+	defltr = zstrm->defltr;
 	deflator_setsrc(defltr, source, n);
 	do {
-		deflator_settgt(defltr, PRVT->target, DEFLTBFFRSIZE);
+		deflator_settgt(defltr, zstrm->target, DEFLTBFFRSIZE);
 		result = deflator_deflate(defltr, (uint32) flush);
 
 		total = deflator_tgtend(defltr);
 		if (total != 0) {
 			intxx r;
 
-			r = PRVT->iofn(PRVT->target, total, PRVT->user);
+			r = zstrm->iofn(zstrm->target, total, zstrm->user);
 			if ((uintxx) r > total || (uintxx) r != total) {
 				SETERROR(ZSTRM_EIOERROR);
 				break;
 			}
-			PRVT->tbgn = PRVT->target;
+			zstrm->tbgn = zstrm->target;
 		}
 	} while (result == DEFLT_TGTEXHSTD);
 
-	updatechecksums(PRVT, source, deflator_srcend(defltr));
+	updatechecksums(zstrm, source, deflator_srcend(defltr));
 }
 
 static uintxx
-deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
+deflate(struct TZStrmPrvt* zstrm, const uint8* buffer, uintxx total)
 {
 	const uint8* bbgn;
 	uint8* send;
 	uint8* sbgn;
 
 	bbgn = buffer;
-	send = PRVT->send;
-	sbgn = PRVT->sbgn;
+	send = zstrm->send;
+	sbgn = zstrm->sbgn;
 	while (total) {
 		uintxx maxrun;
 
@@ -1091,8 +1103,8 @@ deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
 			}
 			else {
 				if (maxrun == DEFLTBFFRSIZE) {
-					dochunk(PRVT, 0, buffer, total);
-					if (PBLC->error) {
+					dochunk(zstrm, 0, buffer, total);
+					if (zstrm->public.error) {
 						SETSTATE(4);
 					}
 					buffer += total;
@@ -1143,15 +1155,15 @@ deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
 			continue;
 		}
 
-		dochunk(PRVT, 0, PRVT->source, DEFLTBFFRSIZE);
-		if (PBLC->error) {
+		dochunk(zstrm, 0, zstrm->source, DEFLTBFFRSIZE);
+		if (zstrm->public.error) {
 			SETSTATE(4);
 			break;
 		}
-		sbgn = PRVT->source;
+		sbgn = zstrm->source;
 	}
 
-	PRVT->sbgn = sbgn;
+	zstrm->sbgn = sbgn;
 	return (uintxx) (buffer - bbgn);
 }
 
@@ -1161,37 +1173,37 @@ deflate(struct TZStrmPrvt* state, const uint8* buffer, uintxx total)
 
 
 CTB_INLINE void
-emitgziptail(struct TZStrmPrvt* state)
+emitgziptail(struct TZStrmPrvt* zstrm)
 {
 	uint32 n;
 
-	CRC32_FINALIZE(PBLC->crc);
-	n = PBLC->crc;
-	emitbyte(PRVT, (uint8) (n >> 0x00));
-	emitbyte(PRVT, (uint8) (n >> 0x08));
-	emitbyte(PRVT, (uint8) (n >> 0x10));
-	emitbyte(PRVT, (uint8) (n >> 0x18));
+	zstrm->public.crc = zstrm->public.crc ^ 0xffffffffu;
+	n = zstrm->public.crc;
+	emitbyte(zstrm, (uint8) (n >> 0x00));
+	emitbyte(zstrm, (uint8) (n >> 0x08));
+	emitbyte(zstrm, (uint8) (n >> 0x10));
+	emitbyte(zstrm, (uint8) (n >> 0x18));
 
-	n = (uint32) PBLC->total;
-	emitbyte(PRVT, (uint8) (n >> 0x00));
-	emitbyte(PRVT, (uint8) (n >> 0x08));
-	emitbyte(PRVT, (uint8) (n >> 0x10));
-	emitbyte(PRVT, (uint8) (n >> 0x18));
-	emittarget(PRVT);
+	n = (uint32) zstrm->public.total;
+	emitbyte(zstrm, (uint8) (n >> 0x00));
+	emitbyte(zstrm, (uint8) (n >> 0x08));
+	emitbyte(zstrm, (uint8) (n >> 0x10));
+	emitbyte(zstrm, (uint8) (n >> 0x18));
+	emittarget(zstrm);
 	
 }
 
 CTB_INLINE void
-emitzlibtail(struct TZStrmPrvt* state)
+emitzlibtail(struct TZStrmPrvt* zstrm)
 {
 	uint32 n;
 
-	n = PBLC->adler;
-	emitbyte(PRVT, (uint8) (n >> 0x18));
-	emitbyte(PRVT, (uint8) (n >> 0x10));
-	emitbyte(PRVT, (uint8) (n >> 0x08));
-	emitbyte(PRVT, (uint8) (n >> 0x00));
-	emittarget(PRVT);
+	n = zstrm->public.adler;
+	emitbyte(zstrm, (uint8) (n >> 0x18));
+	emitbyte(zstrm, (uint8) (n >> 0x10));
+	emitbyte(zstrm, (uint8) (n >> 0x08));
+	emitbyte(zstrm, (uint8) (n >> 0x00));
+	emittarget(zstrm);
 }
 
 void
@@ -1199,31 +1211,33 @@ zstrm_flush(const TZStrm* state, uintxx final)
 {
 	uintxx total;
 	uintxx flush;
+	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state);
 
-	if (CTB_EXPECT0(PRVT->defltr == NULL || PBLC->state ^ 3)) {
-		if (PRVT->infltr) {
-			if (PBLC->error == 0) {
+	zstrm = CTB_CONSTCAST(state);
+	if (CTB_EXPECT0(zstrm->defltr == NULL || zstrm->public.state ^ 3)) {
+		if (zstrm->infltr) {
+			if (zstrm->public.error == 0) {
 				SETERROR(ZSTRM_EINCORRECTUSE);
 			}
 			SETSTATE(4);
 		}
 
-		if (PBLC->state == 1) {
+		if (zstrm->public.state == 1) {
 			/* empty stream */
 			goto L1;
 		}
 		return;
 	}
 
-	total = (uintxx) (PRVT->sbgn - PRVT->source);
+	total = (uintxx) (zstrm->sbgn - zstrm->source);
 
 	flush = DEFLT_FLUSH;
 	if (final) {
 		flush = DEFLT_END;
 	}
-	dochunk(PRVT, flush, PRVT->source, total);
-	if (PBLC->error) {
+	dochunk(zstrm, flush, zstrm->source, total);
+	if (zstrm->public.error) {
 		SETSTATE(4);
 		return;
 	}
@@ -1233,13 +1247,9 @@ zstrm_flush(const TZStrm* state, uintxx final)
 	}
 
 L1:
-	switch (PBLC->stype) {
-		case ZSTRM_GZIP: emitgziptail(PRVT); break;
-		case ZSTRM_ZLIB: emitzlibtail(PRVT); break;
+	switch (zstrm->public.stype) {
+		case ZSTRM_GZIP: emitgziptail(zstrm); break;
+		case ZSTRM_ZLIB: emitzlibtail(zstrm); break;
 	}
 	SETSTATE(4);
 }
-
-
-#undef PRVT
-#undef PBLC
