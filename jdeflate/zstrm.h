@@ -173,4 +173,24 @@ void zstrm_flush(const TZStrm*, uintxx final);
  * Resets the stream to its initial state. */
 void zstrm_reset(const TZStrm*);
 
+
+/* ***************************************************************************
+ * These functions are not related to compression but are exported
+ * anyway because they might be useful in applications using the compression
+ * library, for example to compute checksums of files. 
+ *************************************************************************** */
+
+/*
+ * This function combines two CRC32 checksums into one, as if the two
+ * corresponding data blocks were concatenated. */
+uint32 zstrm_crc32combine(uint32 crc1, uint32 crc2, uintxx size2);
+
+/*
+ * Updates a CRC32 checksum with new data. */
+uint32 zstrm_crc32update(uint32 chcksm, const uint8* source, uintxx size);
+
+/*
+ * Updates an Adler32 checksum with new data. */
+uint32 zstrm_adler32update(uint32 chcksm, const uint8* source, uintxx size);
+
 #endif
