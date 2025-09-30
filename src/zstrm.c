@@ -76,7 +76,7 @@ struct TZStrmPrvt {
 #define ZSTRM_TYPEMASK 0xf000
 
 const TZStrm*
-zstrm_create(uintxx flags, uintxx level, const TAllocator* allctr)
+zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 {
 	uint32 smode;
 	uint32 stype;
@@ -99,7 +99,7 @@ zstrm_create(uintxx flags, uintxx level, const TAllocator* allctr)
 	if (smode == ZSTRM_DEFLATE) {
 		uintxx invalid;
 
-		if (level > 9) {
+		if (level > 9 || level < 0) {
 			/* invalid compression level */
 			return NULL;
 		}
@@ -138,7 +138,7 @@ zstrm_create(uintxx flags, uintxx level, const TAllocator* allctr)
 			zstrm_destroy(PBLC);
 			return NULL;
 		}
-		PBLC->level = (uint32) level;
+		PBLC->level = (int32) level;
 	}
 
 	PBLC->smode = smode;

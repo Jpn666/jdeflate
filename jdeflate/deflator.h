@@ -102,7 +102,7 @@ typedef struct TDeflator TDeflator;
 
 /*
  * Create a deflator instance with the specified compression level. */
-TDeflator* deflator_create(uintxx flags, uintxx level, const TAllocator*);
+TDeflator* deflator_create(uintxx flags, intxx level, const TAllocator*);
 
 /*
  * Destroy a deflator instance. */

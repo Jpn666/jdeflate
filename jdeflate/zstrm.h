@@ -101,7 +101,7 @@ struct TZStrm {
 	uint32 flags;
 	uint32 smode;  /* eZSTRMMode */
 	uint32 stype;  /* eZSTRMType */
-	uint32 level;
+	 int32 level;
 
 	/* total number of bytes readed or written */
 	uintxx total;
@@ -126,7 +126,7 @@ typedef struct TZStrm TZStrm;
 
 /*
  * Creates a new stream. */
-const TZStrm* zstrm_create(uintxx flags, uintxx level, const TAllocator*);
+const TZStrm* zstrm_create(uintxx flags, intxx level, const TAllocator*);
 
 /*
  * Destroys the stream. */

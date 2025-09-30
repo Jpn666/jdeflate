@@ -94,7 +94,7 @@ struct TDEFLTPrvt {
 
 	/* state */
 	uint32 substate;
-	uint32 level;
+	 int32 level;
 	uint32 used;
 
 	uint32 blockinit;
@@ -207,7 +207,7 @@ typedef union {
 #define BUILDMEMINFO(A, B) (((A) << 0x08) | ((B) << 0x00))
 
 CTB_INLINE uintxx
-getmeminfo(uintxx level)
+getmeminfo(intxx level)
 {
 	switch (level) {
 		case 0:
@@ -239,7 +239,7 @@ getmeminfo(uintxx level)
 #define PBLC ((struct TDEFLTPblc*) state)
 
 CTB_INLINE void
-setparameters(struct TDEFLTPrvt* state, uintxx level)
+setparameters(struct TDEFLTPrvt* state, intxx level)
 {
 	uint32 good, nice, chain;
 
@@ -373,11 +373,11 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 
 
 TDeflator*
-deflator_create(uintxx flags, uintxx level, const TAllocator* allctr)
+deflator_create(uintxx flags, intxx level, const TAllocator* allctr)
 {
 	struct TDeflator* state;
 
-	if (level >= 10) {
+	if (level > 9 || level < 0) {
 		/* invalid level */
 		return NULL;
 	}
@@ -394,7 +394,7 @@ deflator_create(uintxx flags, uintxx level, const TAllocator* allctr)
 	PRVT->window = NULL;
 	PRVT->lzlist = NULL;
 
-	PRVT->level = (uint32) level;
+	PRVT->level = (int32) level;
 	if (allocatemem(PRVT, getmeminfo(level)) == 0) {
 		deflator_destroy(state);
 		return NULL;
