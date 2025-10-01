@@ -186,4 +186,5 @@ deflator_tgtend(TDeflator* state)
 	return (uintxx) (state->target - state->tbgn);
 }
 
+
 #endif

@@ -4,6 +4,11 @@ project('jdeflate', 'c', default_options: ['c_std=c99', 'warning_level=3'], vers
 deps = []
 deps += [dependency('', fallback: ['ctoolbox', 'lib'])]
 
+
+if get_option('buildtype').startswith('release')
+    add_project_arguments('-DNDEBUG', language : 'c')
+endif
+
 cc = meson.get_compiler('c')
 if cc.get_id() == 'msvc'
   add_project_arguments('-D__MSVC__', language: 'c')

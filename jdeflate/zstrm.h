@@ -193,4 +193,5 @@ uint32 zstrm_crc32update(uint32 chcksm, const uint8* source, uintxx size);
  * Updates an Adler32 checksum with new data. */
 uint32 zstrm_adler32update(uint32 chcksm, const uint8* source, uintxx size);
 
+
 #endif

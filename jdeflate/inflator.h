@@ -178,4 +178,5 @@ inflator_tgtend(TInflator* state)
 	return (uintxx) (state->target - state->tbgn);
 }
 
+
 #endif
