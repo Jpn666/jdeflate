@@ -1086,7 +1086,10 @@ dochunk(struct TZStrmPrvt* zstrm, uintxx flush, const uint8* source, uintxx n)
 	struct TDeflator* defltr;
 
 	defltr = zstrm->defltr;
-	deflator_setsrc(defltr, source, n);
+	if (n) {
+		deflator_setsrc(defltr, source, n);
+	}
+
 	do {
 		deflator_settgt(defltr, zstrm->target, DEFLTBFFRSIZE);
 		result = deflator_deflate(defltr, (uint32) flush);
