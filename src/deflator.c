@@ -2064,10 +2064,25 @@ CTB_FORCEINLINE uint32
 getmatchlength(const uint8* p1, const uint8* p2)
 {
 	const uint8* pp;
+	const uint8* limit;
 
 	pp = p1;
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+
+	limit = pp + 258;
 	do {
-		if ((uintxx) ((const uint8*) p1 - pp) >= 258) {
+		if (p1 >= limit) {
 			return 258;
 		}
 	} while (
@@ -2076,6 +2091,7 @@ getmatchlength(const uint8* p1, const uint8* p2)
 		(*p1++ == *p2++) &&
 		(*p1++ == *p2++));
 
+L1:
 	p1--;
 	return (uint32) (p1 - pp);
 }
