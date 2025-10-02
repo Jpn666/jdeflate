@@ -2,11 +2,11 @@ project('jdeflate', 'c', default_options: ['c_std=c99', 'warning_level=3'], vers
 
 
 deps = []
-deps += [dependency('', fallback: ['ctoolbox', 'lib'])]
+deps += [dependency('ctoolbox', fallback: ['ctoolbox', 'ctoolbox_dep'])]
 
 
 if get_option('buildtype').startswith('release')
-    add_project_arguments('-DNDEBUG', language : 'c')
+  add_project_arguments('-DNDEBUG', language : 'c')
 endif
 
 cc = meson.get_compiler('c')
@@ -112,31 +112,30 @@ if target_machine.cpu_family() == 'x86_64'
 endif
 
 
-base = 'src'
-r = run_command(python, script, base, '.c', check: true).stdout()
-foreach file: r.split(newline)
-  if not (file == '')
-    projectsources += [file]
-  endif
-endforeach
+projectsources += [
+  'src/inflator.c',
+  'src/deflator.c',
+  'src/zstrm.c',
+]
 
-headerfiles = []
-
-base = 'jdeflate'
-r = run_command(python, script, base, '.h', check: true).stdout()
-foreach file: r.split(newline)
-  if not (file == '')
-    headerfiles += [file]
-  endif
-endforeach
+headerfiles = [
+  'jdeflate/inflator.h',
+  'jdeflate/deflator.h',
+  'jdeflate/zstrm.h',
+]
 
 configfile = configure_file(input: 'jdeflateconfig.h.in', output: 'jdeflateconfig.h', configuration: conf)
 headerfiles += [configfile]
 
 
-static_build = static_library('jdeflate', sources: projectsources, pic: true, install: true, dependencies: deps)
+static_build = static_library(meson.project_name(), sources: projectsources, pic: true, install: true, dependencies: deps)
 lib = declare_dependency(
   link_with: static_build, include_directories: include_directories('.'), dependencies: deps
 )
+jdeflate_dep = lib
+
+
+pkg = import('pkgconfig')
+pkg.generate(libraries: [static_build], version: meson.project_version(), name: meson.project_name(), filebase: meson.project_name(), description: 'Just another deflate compression library')
 
 install_headers(headerfiles, preserve_path: true)
