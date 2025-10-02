@@ -1970,16 +1970,11 @@ gethash(uint32 head, uintxx bits)
 #endif
 
 
-#if defined(CTB_ENV64)
-	#define PREFIXTOTAL 32
-#else
-	#define PREFIXTOTAL 16
-#endif
-
 CTB_FORCEINLINE uint32
 getmatchlength(const uint8* p1, const uint8* p2)
 {
 	const uint8* pp;
+	const uint8* limit;
 
 #if defined(CTB_ENV64)
 	const uint64* c1;
@@ -2017,13 +2012,12 @@ getmatchlength(const uint8* p1, const uint8* p2)
         goto L1;
 	}
 
+	limit = pp + 258;
 	do {
-		if ((uintxx) ((const uint8*) c1 - p1) >= 258 - PREFIXTOTAL) {
-			return (uint32) (((const uint8*) c1) - p1);
+		if ((const uint8*) c1 >= limit) {
+			return 258;
 		}
 	} while (
-		((xor = *c1++ ^ *c2++) == 0) &&
-		((xor = *c1++ ^ *c2++) == 0) &&
 		((xor = *c1++ ^ *c2++) == 0) &&
 		((xor = *c1++ ^ *c2++) == 0));
 
@@ -2032,13 +2026,12 @@ L1:
 	return (uint32) (p1 - pp);
 #else
 
+	limit = pp + 258;
 	do {
-		if ((uintxx) ((const uint8*) c1 - p1) >= 258) {
-			return (uint32) (((const uint8*) c1) - p1);
+		if ((const uint8*) c1 >= limit) {
+			return 258;
 		}
 	} while (
-		(*c1++ == *c2++) &&
-		(*c1++ == *c2++) &&
 		(*c1++ == *c2++) &&
 		(*c1++ == *c2++));
 
@@ -2061,9 +2054,6 @@ L1:
 #endif
 }
 
-#undef PREFIXTOTAL
-
-
 #if defined(CTZERO)
 	#undef CTZERO
 #endif
@@ -2074,11 +2064,26 @@ CTB_FORCEINLINE uint32
 getmatchlength(const uint8* p1, const uint8* p2)
 {
 	const uint8* pp;
+	const uint8* limit;
 
 	pp = p1;
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+	if (*p1++ != *p2++) {
+		goto L1;
+	}
+
+	limit = pp + 258;
 	do {
-		if ((uintxx) ((const uint8*) p1 - pp) >= 258) {
-			return (uint32) (p1 - pp);
+		if (p1 >= limit) {
+			return 258;
 		}
 	} while (
 		(*p1++ == *p2++) &&
@@ -2086,6 +2091,7 @@ getmatchlength(const uint8* p1, const uint8* p2)
 		(*p1++ == *p2++) &&
 		(*p1++ == *p2++));
 
+L1:
 	p1--;
 	return (uint32) (p1 - pp);
 }
