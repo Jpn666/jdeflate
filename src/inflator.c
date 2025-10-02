@@ -391,6 +391,11 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 	uint16 counts[DEFLT_MAXBITS + 1];
 	uint16 ncodes[DEFLT_MAXBITS + 1];
 
+#if defined(__GNUC__) && !defined(__clang__)
+	#pragma GCC diagnostic push
+	#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 	sinfo = dstinfo;
 	switch (mode) {
 		case LTABLEMODE: mbits = LROOTBITS; sinfo = lnsinfo - 256; break;
@@ -398,6 +403,10 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 		default:
 			mbits = CROOTBITS;
 	}
+
+#if defined(__GNUC__) && !defined(__clang__)
+	#pragma GCC diagnostic pop
+#endif
 
 	limit = ENOUGHD;
 	if (mode == LTABLEMODE) {
@@ -552,7 +561,6 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 	return 0;
 }
-
 
 #if defined(CTB_ENV64)
 typedef uint64 bitbuffer;
