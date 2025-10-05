@@ -58,12 +58,6 @@ conf.set('version_minor', v1)
 conf.set('version_rpath', v2)
 
 
-python = find_program('python3')
-script = join_paths(meson.current_source_dir(), 'tools/listfiles.py')
-newline = '''
-'''
-
-
 projectsources = []
 
 if target_machine.cpu_family() == 'x86_64'
