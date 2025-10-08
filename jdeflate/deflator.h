@@ -41,7 +41,7 @@
 
 #include <ctoolbox/ctoolbox.h>
 #include <ctoolbox/memory.h>
-#include <jdeflateconfig.h>
+#include <jdeflate/config/config.h>
 
 
 /* Return codes for deflate call */
