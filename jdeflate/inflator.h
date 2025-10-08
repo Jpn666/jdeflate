@@ -93,39 +93,48 @@ typedef struct TInflator TInflator;
 /*
  * Create an inflator instance. If allctr is NULL, the default allocator is
  * used. */
+JDEFLATE_API
 TInflator* inflator_create(uintxx flags, const TAllocator*);
 
 /*
  * Destroy the inflator instance. */
+JDEFLATE_API
 void inflator_destroy(TInflator*);
 
 /*
  * Set the source buffer for the inflator. */
-CTB_INLINE void inflator_setsrc(TInflator*, const uint8* source, uintxx size);
+CTB_INLINE
+void inflator_setsrc(TInflator*, const uint8* source, uintxx size);
 
 /*
  * Set the target buffer for the inflator. */
-CTB_INLINE void inflator_settgt(TInflator*, uint8* target, uintxx size);
+CTB_INLINE
+void inflator_settgt(TInflator*, uint8* target, uintxx size);
 
 /*
  * Get the number of bytes read from the source buffer. */
-CTB_INLINE uintxx inflator_srcend(TInflator*);
+CTB_INLINE
+uintxx inflator_srcend(TInflator*);
 
 /*
  * Get the number of bytes written to the target buffer. */
-CTB_INLINE uintxx inflator_tgtend(TInflator*);
+CTB_INLINE
+uintxx inflator_tgtend(TInflator*);
 
 /*
  * Perform inflation. If final is non-zero, it indicates that this is the last
  * chunk of input data. */
+JDEFLATE_API
 eINFLTResult inflator_inflate(TInflator*, uintxx final);
 
 /*
  * Set the dictionary for the inflator. */
+JDEFLATE_API
 void inflator_setdctnr(TInflator*, const uint8* dict, uintxx size);
 
 /*
  * Reset the inflator to its initial state. */
+JDEFLATE_API
 void inflator_reset(TInflator*);
 
 

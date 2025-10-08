@@ -92,7 +92,7 @@ headerfiles = [
 ]
 
 
-both_builds = both_libraries(meson.project_name(), sources: projectsources, pic: true, install: true, dependencies: deps, c_shared_args: ['-DCTB_BUILDSHARED'])
+both_builds = both_libraries(meson.project_name(), sources: projectsources, pic: true, install: true, dependencies: deps, c_shared_args: ['-DJDEFLATE_BUILDSHARED'])
 lib = declare_dependency(
   link_with: both_builds, include_directories: include_directories('.'), dependencies: deps
 )

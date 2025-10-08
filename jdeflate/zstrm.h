@@ -126,33 +126,41 @@ typedef struct TZStrm TZStrm;
 
 /*
  * Creates a new stream. */
+JDEFLATE_API
 const TZStrm* zstrm_create(uintxx flags, intxx level, const TAllocator*);
 
 /*
  * Destroys the stream. */
+JDEFLATE_API
 void zstrm_destroy(const TZStrm*);
 
 /*
  * Sets the source buffer for the stream input. This can't be used together
  * with the callback function. */
+JDEFLATE_API
 void zstrm_setsource(const TZStrm*, const uint8* source, uintxx size);
 
 /*
  * Sets the source or target callback function for the stream input or output.
  * The callback function will be called when the stream needs more input
  * data or when the stream has output data available. */
+JDEFLATE_API
 void zstrm_setsourcefn(const TZStrm*, TZStrmIFn fn, void* user);
+
+JDEFLATE_API
 void zstrm_settargetfn(const TZStrm*, TZStrmOFn fn, void* user);
 
 /*
  * Sets the dictionary for the stream.
  * This function can be used to provide a custom dictionary for the
  * compression or decompression process. */
+JDEFLATE_API
 void zstrm_setdctn(const TZStrm*, const uint8* dict, uintxx size);
 
 /*
  * Decompresses up to n bytes of data into the target buffer.
  * Returns the number of bytes written to the target buffer. */
+JDEFLATE_API
 uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
 
 /*
@@ -160,6 +168,7 @@ uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
  * Returns the number of bytes written. This function will always return the
  * same number of input bytes (n) unless there is an error in the output
  * callback function. */
+JDEFLATE_API
 uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
 
 /*
@@ -167,10 +176,12 @@ uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
  * This function can be used to ensure that all data is written
  * to the output. When final is true the stream is finalized and no more data
  * can be written to it. */
+JDEFLATE_API
 void zstrm_flush(const TZStrm*, uintxx final);
 
 /*
  * Resets the stream to its initial state. */
+JDEFLATE_API
 void zstrm_reset(const TZStrm*);
 
 
@@ -183,14 +194,17 @@ void zstrm_reset(const TZStrm*);
 /*
  * This function combines two CRC32 checksums into one, as if the two
  * corresponding data blocks were concatenated. */
+JDEFLATE_API
 uint32 zstrm_crc32combine(uint32 crc1, uint32 crc2, uintxx size2);
 
 /*
  * Updates a CRC32 checksum with new data. */
+JDEFLATE_API
 uint32 zstrm_crc32update(uint32 chcksm, const uint8* source, uintxx size);
 
 /*
  * Updates an Adler32 checksum with new data. */
+JDEFLATE_API
 uint32 zstrm_adler32update(uint32 chcksm, const uint8* source, uintxx size);
 
 

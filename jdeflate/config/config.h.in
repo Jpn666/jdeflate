@@ -34,4 +34,26 @@
 
 #define JDEFLATE_VERSION_STRING "@version@"
 
+
+/* ***************************************************************************
+ * Function visibility attributes
+ *************************************************************************** */
+
+#if defined(_MSC_VER) || defined(__CYGWIN__)
+	#if defined(JDEFLATE_BUILDSHARED)
+		#define JDEFLATE_API __declspec(dllexport)
+	#else
+		#define JDEFLATE_API __declspec(dllimport)
+	#endif
+#endif
+
+#ifndef JDEFLATE_API
+	#if defined(__GNUC__)
+		#define JDEFLATE_API __attribute__((visibility("default")))
+	#else
+		#define JDEFLATE_API
+	#endif
+#endif
+
+
 #endif
