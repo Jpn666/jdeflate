@@ -92,14 +92,36 @@ headerfiles = [
 ]
 
 
-both_builds = both_libraries(meson.project_name(), sources: projectsources, pic: true, install: true, dependencies: deps, c_shared_args: ['-DJDEFLATE_BUILDSHARED'])
-lib = declare_dependency(
-  link_with: both_builds, include_directories: include_directories('.'), dependencies: deps
-)
-jdeflate_dep = lib
+common = {'sources': projectsources, 'dependencies': deps}
 
+if meson.is_subproject()
+  extraargs = []
+  if get_option('default_library') == 'shared'
+    lib = shared_library(meson.project_name(), kwargs: common, soversion: versionarray[0], c_args: ['-DJDEFLATE_BUILDDLL', '-DJDEFLATE_DLL'])
+    if target_machine.system() in ['windows', 'cygwin']
+      extraargs += ['-DJDEFLATE_DLL']
+    endif
+  endif
+  if get_option('default_library') == 'static'
+    lib = static_library(meson.project_name(), kwargs: common, pic: true)
+  endif
 
-pkg = import('pkgconfig')
-pkg.generate(libraries: [jdeflate_dep], version: meson.project_version(), name: meson.project_name(), filebase: meson.project_name(), description: 'Just another deflate compression library')
+  if not is_variable('lib')
+    error('default_library is not shared or static')
+  endif
+  jdeflate_dep = declare_dependency(
+    link_with: lib, include_directories: include_directories('.'), dependencies: deps, compile_args: extraargs
+  )
+else
+  jdeflate_shared = shared_library(meson.project_name(), kwargs: common, install: true, soversion: versionarray[0], c_args: ['-DJDEFLATE_BUILDDLL', '-DJDEFLATE_DLL'])
+  jdeflate_static = static_library(meson.project_name(), kwargs: common, install: true, pic: true)
 
-install_headers(headerfiles, preserve_path: true)
+  jdeflate_dep = declare_dependency(
+    link_with: [jdeflate_static, jdeflate_shared], include_directories: include_directories('.'), dependencies: deps
+  )
+
+  pkg = import('pkgconfig')
+  pkg.generate(libraries: jdeflate_dep, version: meson.project_version(), name: meson.project_name(), filebase: meson.project_name(), description: 'Just another deflate compression library')
+
+  install_headers(headerfiles, preserve_path: true)
+endif

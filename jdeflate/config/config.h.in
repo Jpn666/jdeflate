@@ -1,5 +1,5 @@
  /*
- * Copyright (C) 2023, jpn
+ * Copyright (C) 2025, jpn
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 #define d5c77bd8_2a38_4e2d_a74f_c53348f5e61e
 
 /*
- * jdeflateconfig.h
+ * config.h
  * Configuration flags.
  */
 
@@ -39,11 +39,13 @@
  * Function visibility attributes
  *************************************************************************** */
 
-#if defined(_MSC_VER) || defined(__CYGWIN__)
-	#if defined(JDEFLATE_BUILDSHARED)
-		#define JDEFLATE_API __declspec(dllexport)
-	#else
-		#define JDEFLATE_API __declspec(dllimport)
+#if defined(JDEFLATE_DLL)
+	#if defined(_WIN32)
+		#if defined(JDEFLATE_BUILDDLL)
+			#define JDEFLATE_API __declspec(dllexport)
+		#else
+			#define JDEFLATE_API __declspec(dllimport)
+		#endif
 	#endif
 #endif
 
