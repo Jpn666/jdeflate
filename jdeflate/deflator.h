@@ -131,7 +131,13 @@ CTB_INLINE
 uintxx deflator_tgtend(TDeflator*);
 
 /*
- * Compress data using the deflator instance. */
+ * Compress data using the deflator instance.
+ *
+ * When flush is DEFLT_FLUSH or DEFLT_END, the deflator will flush as much data
+ * as possible to the target buffer and no new source data must be set until
+ * the deflator returns DEFLT_OK. We always append a STORED block type at the
+ * end of the stream when flush is set, so that the stream is always
+ * properly terminated, this does the same as ZLIB's Z_SYNC_FLUSH flag. */
 JDEFLATE_API
 eDEFLTResult deflator_deflate(TDeflator*, eDEFLTFlush flush);
 

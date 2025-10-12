@@ -125,7 +125,7 @@ uintxx inflator_tgtend(TInflator*);
  * Perform inflation. If final is non-zero, it indicates that this is the last
  * chunk of input data. */
 JDEFLATE_API
-eINFLTResult inflator_inflate(TInflator*, uintxx final);
+eINFLTResult inflator_inflate(TInflator*, uint32 final);
 
 /*
  * Set the dictionary for the inflator. */

@@ -165,6 +165,7 @@ uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
 
 /*
  * Compresses n bytes of data from the source buffer.
+ *
  * Returns the number of bytes written. This function will always return the
  * same number of input bytes (n) unless there is an error in the output
  * callback function. */
@@ -173,11 +174,12 @@ uintxx zstrm_deflate(const TZStrm*, const void* source, uintxx n);
 
 /*
  * Flushes the output to the stream output callback function.
+ *
  * This function can be used to ensure that all data is written
  * to the output. When final is true the stream is finalized and no more data
  * can be written to it. */
 JDEFLATE_API
-void zstrm_flush(const TZStrm*, uintxx final);
+void zstrm_flush(const TZStrm*, uint32 final);
 
 /*
  * Resets the stream to its initial state. */

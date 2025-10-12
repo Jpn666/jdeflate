@@ -66,7 +66,7 @@
 
 /* Window buffer size, this must be greather than or equal
  * to 32768 + 258 + 32 */
-#define WNDWSIZE 65536
+#define WNDWSIZE 34816
 
 
 /* Private stuff */
@@ -757,7 +757,7 @@ validate(struct TINFLTPrvt* state)
 }
 
 eINFLTResult
-inflator_inflate(TInflator* state, uintxx final)
+inflator_inflate(TInflator* state, uint32 final)
 {
 	uint32 r;
 

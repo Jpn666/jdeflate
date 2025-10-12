@@ -1234,7 +1234,7 @@ emitzlibtail(struct TZStrmPrvt* zstrm)
 }
 
 void
-zstrm_flush(const TZStrm* state, uintxx final)
+zstrm_flush(const TZStrm* state, uint32 final)
 {
 	uintxx total;
 	uintxx flush;
@@ -1538,56 +1538,6 @@ zstrm_crc32update(uint32 chcksm, const uint8* data, uintxx size)
 #undef CRC32_SLICEBY4
 
 #endif
-#endif
-
-
-#if 0
-
-static uint32
-crc32_reflect(uint32 value, uint8 size)
-{
-	uint8 i;
-	uint32 result = 0;
-	size--;
-	for (i = 0; size + 1 > i; i++) {
-		if (value & 1) {
-			result |= 1 << (size - i);
-		}
-		value >>= 1;
-	}
-	return result;
-}
-
-void
-crc32_createtable(uint32 table[8][256])
-{
-	uint32 i;
-	uintxx j;
-	uint32 x;
-
-	for (i = 0; 256 > i; i++) {
-		table[0][i] = crc32_reflect(i, 8) << 24;
-		for (j = 0; 8 > j; j++) {
-			x = table[0][i];
-			if (x & (1u << 31)) {
-				table[0][i] = (x << 1) ^ CRC32_POLYNOMIAL;
-				continue;
-			}
-			table[0][i] = x << 1;
-		}
-		table[0][i] = crc32_reflect(table[0][i], 32);
-	}
-	for (i = 0; 256 > i; i++) {
-		table[1][i] = table[0][table[0][i] & 0xFF] ^ (table[0][i] >> 8);
-		table[2][i] = table[0][table[1][i] & 0xFF] ^ (table[1][i] >> 8);
-		table[3][i] = table[0][table[2][i] & 0xFF] ^ (table[2][i] >> 8);
-		table[4][i] = table[0][table[3][i] & 0xFF] ^ (table[3][i] >> 8);
-		table[5][i] = table[0][table[4][i] & 0xFF] ^ (table[4][i] >> 8);
-		table[6][i] = table[0][table[5][i] & 0xFF] ^ (table[5][i] >> 8);
-		table[7][i] = table[0][table[6][i] & 0xFF] ^ (table[6][i] >> 8);
-	}
-}
-
 #endif
 
 
