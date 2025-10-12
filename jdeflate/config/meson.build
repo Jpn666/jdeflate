@@ -1,4 +1,4 @@
-# major, minor and path
+# major, minor and patch
 versionarray = [0, 0, 0]
 
 mmp = meson.project_version().split('.')
@@ -25,7 +25,7 @@ conf.set('version', version)
 
 conf.set('version_major', v0)
 conf.set('version_minor', v1)
-conf.set('version_rpath', v2)
+conf.set('version_patch', v2)
 
 
 if meson.is_subproject()

@@ -80,6 +80,7 @@ endif
 
 
 projectsources += [
+  'src/version.c',
   'src/inflator.c',
   'src/deflator.c',
   'src/zstrm.c',

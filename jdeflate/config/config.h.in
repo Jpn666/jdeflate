@@ -24,18 +24,6 @@
 
 
 /* ***************************************************************************
- * Version number
- *************************************************************************** */
-
-#define JDEFLATE_VERSION_MAJOR @version_major@
-#define JDEFLATE_VERSION_MINOR @version_minor@
-/* revision */
-#define JDEFLATE_VERSION_RPATH @version_rpath@
-
-#define JDEFLATE_VERSION_STRING "@version@"
-
-
-/* ***************************************************************************
  * Function visibility attributes
  *************************************************************************** */
 
@@ -56,6 +44,35 @@
 		#define JDEFLATE_API
 	#endif
 #endif
+
+
+/* ***************************************************************************
+ * Version number
+ *************************************************************************** */
+
+#define JDEFLATE_VERSION_MAJOR @version_major@
+#define JDEFLATE_VERSION_MINOR @version_minor@
+/* revision */
+#define JDEFLATE_VERSION_PATCH @version_patch@
+
+
+#define JDEFLATE_VERSION_STRING "@version@"
+
+
+/*
+ * Version info */
+struct JDEFLATEVersion {
+	int major;
+	int minor;
+	int patch;
+	const char* versionstring;
+	const char* builddate;
+};
+
+/*
+ * */
+JDEFLATE_API
+struct JDEFLATEVersion jdeflate_getversion(void);
 
 
 #endif
