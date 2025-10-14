@@ -36,22 +36,22 @@
 
 /* Stream mode */
 typedef enum {
-	ZSTRM_INFLATE = 0x00100,
-	ZSTRM_DEFLATE = 0x00200
+	ZSTRM_INFLATE = 0x00010000,
+	ZSTRM_DEFLATE = 0x00020000
 } eZSTRMMode;
 
 
 /* Stream type */
 typedef enum {
-	ZSTRM_DFLT = 0x01000,
-	ZSTRM_ZLIB = 0x02000,
-	ZSTRM_GZIP = 0x04000
+	ZSTRM_DFLT = 0x00100000,
+	ZSTRM_ZLIB = 0x00200000,
+	ZSTRM_GZIP = 0x00400000
 } eZSTRMType;
 
 
 /* Extra flags */
-#define ZSTRM_DOCRC   0x10000
-#define ZSTRM_DOADLER 0x20000
+#define ZSTRM_DOCRC   0x01000000
+#define ZSTRM_DOADLER 0x02000000
 
 
 /* Error codes */

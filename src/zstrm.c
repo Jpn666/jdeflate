@@ -75,8 +75,8 @@ extern uint32 zstrm_adler32updateASM(uint32, const uint8*, uintxx);
 #endif
 
 
-#define ZSTRM_MODEMASK 0x0f00
-#define ZSTRM_TYPEMASK 0xf000
+#define ZSTRM_MODEMASK 0x000f0000
+#define ZSTRM_TYPEMASK 0x00f00000
 
 const TZStrm*
 zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
@@ -127,16 +127,22 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 	zstrm->allctr = allctr;
 
 	if (smode == ZSTRM_INFLATE) {
+		uint32 f;
+
+		f = flags & 0xff00;
 		zstrm->defltr = NULL;
-		zstrm->infltr = inflator_create(0, allctr);
+		zstrm->infltr = inflator_create(f, allctr);
 		if (zstrm->infltr == NULL) {
 			zstrm_destroy(&zstrm->public);
 			return NULL;
 		}
 	}
 	if (smode == ZSTRM_DEFLATE) {
+		uint32 f;
+
+		f = flags & 0x00ff;
 		zstrm->infltr = NULL;
-		zstrm->defltr = deflator_create(0, level, allctr);
+		zstrm->defltr = deflator_create(f, level, allctr);
 		if (zstrm->defltr == NULL) {
 			zstrm_destroy(&zstrm->public);
 			return NULL;

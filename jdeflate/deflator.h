@@ -72,7 +72,7 @@ typedef enum {
 
 /* Flags */
 typedef enum {
-	DEFLT_FIXEDCODES = 0x10
+	DEFLT_FIXEDCODES = 0x01
 } eDEFLTFlags;
 
 
