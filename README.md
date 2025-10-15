@@ -2,8 +2,9 @@
 
 ![GitHub tag (with filter)](https://img.shields.io/github/v/tag/Jpn666/jdeflate)  ![GitHub License](https://img.shields.io/github/license/Jpn666/jdeflate)
 
-
-<img src="jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; width: 340px; height: auto; display: block" >
+<p align="center">
+    <img src="jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; width: 340px; height: auto; display: block" >
+</p>
 
 ---
 
