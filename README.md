@@ -1,7 +1,7 @@
 # Jdeflate
 
 ![GitHub tag (with filter)](https://img.shields.io/github/v/tag/Jpn666/jdeflate)  ![GitHub License](https://img.shields.io/github/license/Jpn666/jdeflate)
-<img src="jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; max-width: 300px; height: auto; display: block" >
+<img src="jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; width: 340px; height: auto; display: block" >
 
 ---
 
@@ -322,7 +322,9 @@ zstrm_destroy(zstrm);
 
 For complete examples and usage you can check the following repository [jdeflate-test](https://github.com/Jpn666/jdeflate-test).
 
-### License
+---
+
+## License
 
 This project is licensed under the **Apache License 2.0**.  
 See the [LICENSE](LICENSE) file for details.
