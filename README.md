@@ -103,7 +103,7 @@ do {
 	}
 
 	do {
-		deflator_settgt(deflator, target, targesize);
+		deflator_settgt(deflator, target, targetsize);
 
 		status = deflator_deflate(deflator, final);
 		/* the target buffer now contains the compressed data */
@@ -137,7 +137,7 @@ do {
 	do {
 		inflator_settgt(inflator, target, targetsize);
 
-		status = inflator_deflate(inflator, final);
+		status = inflator_inflate(inflator, final);
 		/* target buffer now contains the decompressed data */ 
 		/* and to get the number of bytes that have been written */
 		/* you can use inflator_tgtend(inflator) */
