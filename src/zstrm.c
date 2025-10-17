@@ -733,7 +733,9 @@ zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 		}
 
 		total = (uintxx) (zstrm->send - zstrm->sbgn);
-		inflator_setsrc(zstrm->infltr, zstrm->sbgn, total);
+		if (total) {
+			inflator_setsrc(zstrm->infltr, zstrm->sbgn, total);
+		}
 
 		SETSTATE(3);
 		if (n != 0) {
