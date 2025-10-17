@@ -1806,7 +1806,7 @@ L_STATE3:
  * Mathfinder related code
  *************************************************************************** */
 
-#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+#if defined(__clang__)
 	#pragma clang diagnostic push
 	#pragma clang diagnostic ignored "-Wcast-align"
 #endif
@@ -1858,7 +1858,7 @@ slidewindow(struct TDEFLTPrvt* state)
 	return (uintxx) (b - w);
 }
 
-#if defined(__clang__) && defined(CTB_FASTUNALIGNED)
+#if defined(__clang__)
 	#pragma clang diagnostic pop
 #endif
 
@@ -1912,9 +1912,10 @@ slidehash(struct TDEFLTPrvt* state)
 	#define GETSHEAD4(B, N) ((*((uint32*) ((B) + (N)))))
 #else
 	#define GETSHEAD4(B, N) \
-	    (((B)[(N) + 0] << 0x00) | \
-	     ((B)[(N) + 1] << 0x08) | \
-	     ((B)[(N) + 2] << 0x10) | ((B)[(N) + 3] << 0x18))
+	    ((((uint32) (B)[(N) + 0]) << 0x00) | \
+	     (((uint32) (B)[(N) + 1]) << 0x08) | \
+	     (((uint32) (B)[(N) + 2]) << 0x10) | \
+	     (((uint32) (B)[(N) + 3]) << 0x18))
 #endif
 
 
