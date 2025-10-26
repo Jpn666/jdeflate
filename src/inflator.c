@@ -1278,10 +1278,8 @@ copybytes(struct TINFLTPrvt* state)
 			}
 		}
 
-		if (CTB_EXPECT1(maxrun != 0)) {
-			do {
-				*target++ = *buffer++;
-			} while (--maxrun);
+		while (maxrun--) {
+			*target++ = *buffer++;
 		}
 	} while (slength);
 
@@ -1787,11 +1785,9 @@ decodefast(struct TINFLTPrvt* state)
 						buffer += 8;
 					}
 				}
-				
-				if (CTB_EXPECT1(maxrun)) {
-					do {
-						*target++ = *buffer++;
-					} while (--maxrun);
+
+				while (maxrun--) {
+					*target++ = *buffer++;
 				}
 				maxrun = (uintxx) (target - PBLC->tbgn);
 			} while (length);

@@ -1,4 +1,4 @@
-project('jdeflate', 'c', default_options: ['c_std=c99', 'warning_level=3'], version: run_command('tools/version.py', check: true).stdout().strip(), meson_version: '>=1.1.0')
+project('jdeflate', 'c', default_options: ['c_std=c99', 'warning_level=3'], version: run_command('tools/version.py', check: true).stdout().strip(), meson_version: '>=1.3.0')
 
 
 subdir('jdeflate/config')
@@ -93,36 +93,18 @@ headerfiles = [
 ]
 
 
-common = {'sources': projectsources, 'dependencies': deps}
+lib = both_libraries(meson.project_name(), install: true, pic: true, sources: projectsources, dependencies: deps, soversion: versionarray[0], c_args: ['-DJDEFLATE_BUILDDLL', '-DJDEFLATE_DLL'])
 
-if meson.is_subproject()
-  extraargs = []
-  if get_option('default_library') == 'shared'
-    lib = shared_library(meson.project_name(), kwargs: common, soversion: versionarray[0], c_args: ['-DJDEFLATE_BUILDDLL', '-DJDEFLATE_DLL'])
-    if target_machine.system() in ['windows', 'cygwin']
-      extraargs += ['-DJDEFLATE_DLL']
-    endif
-  endif
-  if get_option('default_library') == 'static'
-    lib = static_library(meson.project_name(), kwargs: common, pic: true)
-  endif
-
-  if not is_variable('lib')
-    error('default_library is not shared or static')
-  endif
-  jdeflate_dep = declare_dependency(
-    link_with: lib, include_directories: include_directories('.'), dependencies: deps, compile_args: extraargs
-  )
-else
-  jdeflate_shared = shared_library(meson.project_name(), kwargs: common, install: true, soversion: versionarray[0], c_args: ['-DJDEFLATE_BUILDDLL', '-DJDEFLATE_DLL'])
-  jdeflate_static = static_library(meson.project_name(), kwargs: common, install: true, pic: true)
-
-  jdeflate_dep = declare_dependency(
-    link_with: [jdeflate_static, jdeflate_shared], include_directories: include_directories('.'), dependencies: deps
-  )
-
-  pkg = import('pkgconfig')
-  pkg.generate(libraries: jdeflate_dep, version: meson.project_version(), name: meson.project_name(), filebase: meson.project_name(), description: 'Just another deflate compression library')
-
-  install_headers(headerfiles, preserve_path: true)
+extraargs = []
+if target_machine.system() in ['windows', 'cygwin']
+  extraargs += ['-DJDEFLATE_DLL']
 endif
+
+jdeflate_dep = declare_dependency(
+  link_with: lib, include_directories: include_directories('.'), dependencies: deps, compile_args: extraargs
+)
+
+pkg = import('pkgconfig')
+pkg.generate(libraries: jdeflate_dep, version: meson.project_version(), name: meson.project_name(), filebase: meson.project_name(), description: 'Just another deflate compression library')
+
+install_headers(headerfiles, preserve_path: true)

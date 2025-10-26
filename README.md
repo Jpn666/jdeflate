@@ -3,7 +3,7 @@
 ![GitHub tag (with filter)](https://img.shields.io/github/v/tag/Jpn666/jdeflate)  ![GitHub License](https://img.shields.io/github/license/Jpn666/jdeflate)
 
 <p align="center">
-    <img src="jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; width: 340px; height: auto; display: block" >
+    <img src=".media/jdeflate-logo.svg" alt="logo" style="margin: 0.5em auto 2em auto; width: 340px; height: auto; display: block" >
 </p>
 
 ---
@@ -27,6 +27,8 @@
   - [Callbacks](#callbacks)
   - [Compression and Decompression](#compression-and-decompression)
   - [Flushing and Cleanup](#flushing-and-cleanup)
+- [Building](#building)
+  - [Build Steps](#build-steps)
 - [License](#license)
 
 ---
@@ -59,8 +61,8 @@ For C++:
 
 ```c
 extern "C" {
-	#include <jdeflate/deflator.h>
-	#include <jdeflate/inflator.h>
+    #include <jdeflate/deflator.h>
+    #include <jdeflate/inflator.h>
 }
 ```
 
@@ -73,7 +75,7 @@ TDeflator* deflator;
 /* flags, compression level, and memory allocator */
 deflator = deflator_create(0, 6, NULL);
 if (deflator == NULL) {
-	/*... handle the error */
+    /*... handle the error */
 }
 ```
 
@@ -84,7 +86,7 @@ TInflator* inflator;
 /* flags, and memory allocator */
 inflator = inflator_create(0, NULL);
 if (inflator == NULL) {
-	/* ... handle the error */
+    /* ... handle the error */
 }
 ```
 
@@ -96,25 +98,25 @@ bool final;
 
 final = 0;
 do {
-	/* ...read or fetch some data into the source buffer */
-	deflator_setsrc(deflator, source, sourcesize);
-	if (/*...no more input*/) {
-		final = 1;
-	}
+    /* ...read or fetch some data into the source buffer */
+    deflator_setsrc(deflator, source, sourcesize);
+    if (/*...no more input*/) {
+        final = 1;
+    }
 
-	do {
-		deflator_settgt(deflator, target, targetsize);
+    do {
+        deflator_settgt(deflator, target, targetsize);
 
-		status = deflator_deflate(deflator, final);
-		/* the target buffer now contains the compressed data */
-		/* and to get the number of bytes that have been written */
-		/* you can use deflator_tgtend(deflator) */
-	} while (status == DEFLT_TGTEXHSTD);
+        status = deflator_deflate(deflator, final);
+        /* the target buffer now contains the compressed data */
+        /* and to get the number of bytes that have been written */
+        /* you can use deflator_tgtend(deflator) */
+    } while (status == DEFLT_TGTEXHSTD);
 } while (status == DEFLT_SRCEXHSTD);
 
 /* check for errors */
 if (status == DEFLT_OK) {
-     /* ... compression was successful */
+    /* ... compression was successful */
 } else {
     /* ... handle the error */
 }
@@ -125,28 +127,28 @@ if (status == DEFLT_OK) {
 ```c
 unsigned int status;
 bool final;
-c
+
 final = 0;
 do {
-	/* ...read or fetch some data into the source buffer */
-	inflator_setsrc(inflator, source, sourcesize);
-	if (/*...no more input*/) {
-		final = 1;
-	}
+    /* ...read or fetch some data into the source buffer */
+    inflator_setsrc(inflator, source, sourcesize);
+    if (/*...no more input*/) {
+        final = 1;
+    }
 
-	do {
-		inflator_settgt(inflator, target, targetsize);
+    do {
+        inflator_settgt(inflator, target, targetsize);
 
-		status = inflator_inflate(inflator, final);
-		/* target buffer now contains the decompressed data */ 
-		/* and to get the number of bytes that have been written */
-		/* you can use inflator_tgtend(inflator) */
-	} while (status == INFLT_TGTEXHSTD);
+        status = inflator_inflate(inflator, final);
+        /* target buffer now contains the decompressed data */ 
+        /* and to get the number of bytes that have been written */
+        /* you can use inflator_tgtend(inflator) */
+    } while (status == INFLT_TGTEXHSTD);
 } while (status == INFLT_SRCEXHSTD);
 
 /* check for errors */
 if (status == DFLT_OK) {
-     /* ... decompression was successful */
+    /* ... decompression was successful */
 } else {
     /* ... handle the error */
 }
@@ -159,20 +161,20 @@ For simple operations, you can compress or decompress directly into a buffer wit
 #### Compression
 
 ```c
-inflator_setsrc(deflator, source, sourcesize);
-inflator_settgt(deflator, target, targetsize);
-if (inflator_inflate(inflator, 1) != INFLT_OK) {
-	/* ... handle the error */
+deflator_setsrc(deflator, source, sourcesize);
+deflator_settgt(deflator, target, targetsize);
+if (deflator_deflate(inflator, 1) != INFLT_OK) {
+    /* ... handle the error */
 }
 ```
 
 #### Decompression
 
 ```c
-deflator_setsrc(deflator, source, sourcesize);
-deflator_settgt(deflator, target, targetsize);
-if (deflator_deflate(deflator, 1) != DEFLT_OK) {
-	/* ... handle the error */
+inflator_setsrc(inflator, source, sourcesize);
+inflator_settgt(inflator, target, targetsize);
+if (inflator_inflator(inflator, 1) != DEFLT_OK) {
+    /* ... handle the error */
 }
 ```
 
@@ -207,7 +209,7 @@ For C++:
 
 ```c
 extern "C" {
-	#include <jdeflate/zstrm.h>
+    #include <jdeflate/zstrm.h>
 }
 ```
 
@@ -290,7 +292,7 @@ zstrm_setsource(zstrm, buffer, buffersize);
 ```c
 zstrm_deflate(zstrm, source, sourcesize);
 if (zstrm->error) {
-	/* ... handle errors */
+    /* ... handle errors */
 }
 ```
 
@@ -300,7 +302,7 @@ if (zstrm->error) {
 uintxx total;
 total = zstrm_inflate(zstrm, target, targetsize);
 if (zstrm->error) {
-	/* ... handle errors */
+    /* ... handle errors */
 }
 ```
 
@@ -313,7 +315,7 @@ To terminate the compression stream you need to use the flush function. This wil
 ```c
 zstrm_flush(zstrm, 1);
 if (zstrm->error) {
-	/* ... handle errors */
+    /* ... handle errors */
 }
 ```
 
@@ -324,6 +326,74 @@ zstrm_destroy(zstrm);
 ```
 
 For complete examples and usage you can check the following repository [jdeflate-test](https://github.com/Jpn666/jdeflate-test).
+
+---
+
+## Building
+
+This project uses the Meson build system. To build the library, follow these steps:
+
+### Prerequisites
+
+- A C99-compliant compiler
+- Python 3.7 or newer
+- Meson build system (0.55.0 or newer)
+- Ninja build system
+
+### Installing Build Tools
+
+On most Unix-like systems, you can install the required build tools using:
+
+```bash
+pip3 install meson ninja
+```
+
+For other platforms, please refer to the [Meson installation guide](https://mesonbuild.com/Getting-meson.html).
+
+### Build Steps
+
+1. Configure the build:
+   ```bash
+   meson setup builddir
+   ```
+
+2. Build the project:
+   ```bash
+   meson compile -C builddir
+   ```
+
+3. (Optional) Install the library:
+   ```bash
+   meson install -C builddir
+   ```
+
+### Build Options
+
+You can configure build options using `meson configure`. Common options include:
+
+- `--default-library=static|shared` - Build static or shared library (default: shared)
+- `--buildtype=plain|debug|debugoptimized|release` - Set build type (default: debug)
+
+Example:
+```bash
+meson configure builddir --default-library=static --buildtype=release
+```
+
+### Build Output
+
+After a successful build, you'll find:
+- Static library: `builddir/libjdeflate.a`
+- Shared library: `builddir/libjdeflate.so` (on Linux)
+
+---
+
+## Integration
+
+### Windows DLL Support
+
+When using Jdeflate as a shared library (DLL) on Windows (`MSVC`), you need to define the `JDEFLATE_DLL` macro.
+
+This macro ensures proper import of functions from the DLL.
 
 ---
 

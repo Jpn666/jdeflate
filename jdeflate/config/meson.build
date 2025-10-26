@@ -28,8 +28,4 @@ conf.set('version_minor', v1)
 conf.set('version_patch', v2)
 
 
-if meson.is_subproject()
-  configure_file(input: 'config.h.in', output: 'config.h', configuration: conf)
-else
-  configure_file(input: 'config.h.in', output: 'config.h', configuration: conf, install: true, install_dir: 'include/jdeflate/config')
-endif
+configure_file(input: 'config.h.in', output: 'config.h', configuration: conf, install: true, install_dir: 'include/jdeflate/config')
