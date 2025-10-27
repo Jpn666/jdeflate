@@ -147,7 +147,7 @@ do {
 } while (status == INFLT_SRCEXHSTD);
 
 /* check for errors */
-if (status == DFLT_OK) {
+if (status == INFLT_OK) {
     /* ... decompression was successful */
 } else {
     /* ... handle the error */
@@ -163,7 +163,7 @@ For simple operations, you can compress or decompress directly into a buffer wit
 ```c
 deflator_setsrc(deflator, source, sourcesize);
 deflator_settgt(deflator, target, targetsize);
-if (deflator_deflate(inflator, 1) != INFLT_OK) {
+if (deflator_deflate(deflator, 1) != DEFLT_OK) {
     /* ... handle the error */
 }
 ```
@@ -173,7 +173,7 @@ if (deflator_deflate(inflator, 1) != INFLT_OK) {
 ```c
 inflator_setsrc(inflator, source, sourcesize);
 inflator_settgt(inflator, target, targetsize);
-if (inflator_inflator(inflator, 1) != DEFLT_OK) {
+if (inflator_inflator(inflator, 1) != INFLT_OK) {
     /* ... handle the error */
 }
 ```
