@@ -1320,7 +1320,7 @@ copybytes(struct TINFLTPrvt* state)
 
 
 #define FASTSRCLEFT  15
-#define FASTTGTLEFT 266
+#define FASTTGTLEFT 274
 
 static uint32 decodefast(struct TINFLTPrvt* state);
 
