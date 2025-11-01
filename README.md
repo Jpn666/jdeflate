@@ -173,7 +173,7 @@ if (deflator_deflate(deflator, 1) != DEFLT_OK) {
 ```c
 inflator_setsrc(inflator, source, sourcesize);
 inflator_settgt(inflator, target, targetsize);
-if (inflator_inflator(inflator, 1) != INFLT_OK) {
+if (inflator_inflate(inflator, 1) != INFLT_OK) {
     /* ... handle the error */
 }
 ```
