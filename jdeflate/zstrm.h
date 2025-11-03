@@ -50,8 +50,15 @@ typedef enum {
 
 
 /* Extra flags */
-#define ZSTRM_DOCRC   0x01000000
-#define ZSTRM_DOADLER 0x02000000
+typedef enum {
+	/* Force checksums, even for stream types that don't require them */
+	ZSTRM_DOCRC   = 0x01000000,
+	ZSTRM_DOADLER = 0x02000000,
+
+	/* Ignore checksums, only for inflate mode */
+	ZSTRM_NOCRC   = 0x04000000,
+	ZSTRM_NOADLER = 0x08000000
+} eZSTRMFlags;
 
 
 /* Error codes */
