@@ -19,7 +19,6 @@
 
 #define IOBFFRSIZE 32768
 
-
 typedef intxx (*TZStrmIOFn)(uint8*, uintxx, void*);
 
 
@@ -715,6 +714,11 @@ zstrm_inflate(const TZStrm* state, void* target, uintxx n)
 	}
 
 	if (CTB_EXPECT1(zstrm->public.state == 3)) {
+		if (n > (((uintxx) 1) << 31) - 1) {
+			SETSTATE(4);
+			SETERROR(ZSTRM_ELIMIT);
+			return 0;
+		}
 		return inflate(zstrm, target, n);
 	}
 
@@ -1071,6 +1075,11 @@ zstrm_deflate(const TZStrm* state, const void* source, uintxx n)
 	if (CTB_EXPECT1(zstrm->public.state == 3)) {
 		uintxx r;
 
+		if (n > (((uintxx) 1) << 31) - 1) {
+			SETSTATE(4);
+			SETERROR(ZSTRM_ELIMIT);
+			return 0;
+		}
 		r = deflate(zstrm, source, n);
 		zstrm->public.total += r;
 		return r;
