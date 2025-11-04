@@ -166,13 +166,16 @@ JDEFLATE_API
 void zstrm_setdctn(const TZStrm*, const uint8* dict, uintxx size);
 
 /*
- * Decompresses up to n bytes of data into the target buffer.
+ * Decompresses up to n bytes of data into the target buffer. The size of the
+ * target buffer must be limited to 2^32 - 1 bytes.
+ *
  * Returns the number of bytes written to the target buffer. */
 JDEFLATE_API
 uintxx zstrm_inflate(const TZStrm*, void* target, uintxx n);
 
 /*
- * Compresses n bytes of data from the source buffer.
+ * Compresses n bytes of data from the source buffer. The size of the
+ * source buffer must be limited to 2^32 - 1 bytes.
  *
  * Returns the number of bytes written. This function will always return the
  * same number of input bytes (n) unless there is an error in the output
