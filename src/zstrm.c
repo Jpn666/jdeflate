@@ -1349,19 +1349,21 @@ zstrm_adler32update(uint32 chcksm, const uint8* data, uintxx size)
 	uint32 b;
 	uint32 ra;
 	uint32 rb;
-	uintxx i;
 	CTB_ASSERT(data);
 
 	a = 0xffffu & (chcksm);
 	b = 0xffffu & (chcksm >> 16);
 
-	i = 32;
-	for (; size >= 512; size -= 512) {
+	for (; size >= 4096; size -= 4096) {
+		uintxx i;
+
+		i = 128;
 		do {
 			ADLER32_SLICEBY8
 			ADLER32_SLICEBY8
+			ADLER32_SLICEBY8
+			ADLER32_SLICEBY8
 		} while(--i);
-		i = 32;
 
 		/* modulo reduction */
 		ra = a >> 16;
@@ -1385,10 +1387,12 @@ zstrm_adler32update(uint32 chcksm, const uint8* data, uintxx size)
 	rb = b >> 16;
 	a = (a & 0xffff) + ((ra << 4) - ra);
 	b = (b & 0xffff) + ((rb << 4) - rb);
-	if (a >= ADLER_BASE)
+	if (a >= ADLER_BASE) {
 		a -= ADLER_BASE;
-	if (b >= ADLER_BASE)
+	}
+	if (b >= ADLER_BASE) {
 		b -= ADLER_BASE;
+	}
 
 	return (b << 16) | a;
 }
