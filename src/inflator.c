@@ -1267,7 +1267,6 @@ copybytes(struct TINFLTPrvt* state)
 				target[1] = buffer[1];
 				target[2] = buffer[2];
 				target[3] = buffer[3];
-
 				target[4] = buffer[4];
 				target[5] = buffer[5];
 				target[6] = buffer[6];
@@ -1684,15 +1683,31 @@ decodefast(struct TINFLTPrvt* state)
 			if (CTB_EXPECT1(offset >= PLATFORMWORDSIZE)) {
 #if !defined(CTB_STRICTALIGNMENT) && defined(CTB_FASTUNALIGNED)
 #if defined(CTB_ENV64)
-				((uint64*) target)[0] = ((uint64*) buffer)[0];
-				((uint64*) target)[1] = ((uint64*) buffer)[1];
-				target += 16;
-				buffer += 16;
+ 				if (maxrun >= 64) {
+ 					((uint64*) target)[0] = ((uint64*) buffer)[0];
+ 					((uint64*) target)[1] = ((uint64*) buffer)[1];
+ 					((uint64*) target)[2] = ((uint64*) buffer)[2];
+ 					((uint64*) target)[3] = ((uint64*) buffer)[3];
+ 					((uint64*) target)[4] = ((uint64*) buffer)[4];
+ 					((uint64*) target)[5] = ((uint64*) buffer)[5];
+ 					((uint64*) target)[6] = ((uint64*) buffer)[6];
+ 					((uint64*) target)[7] = ((uint64*) buffer)[7];
+ 					target += 64;
+ 					buffer += 64;
+ 				}
 #else
-				((uint32*) target)[0] = ((uint32*) buffer)[0];
-				((uint32*) target)[1] = ((uint32*) buffer)[1];
-				target += 8;
-				buffer += 8;
+ 				if (maxrun >= 32) {
+ 					((uint32*) target)[0] = ((uint32*) buffer)[0];
+ 					((uint32*) target)[1] = ((uint32*) buffer)[1];
+ 					((uint32*) target)[2] = ((uint32*) buffer)[2];
+ 					((uint32*) target)[3] = ((uint32*) buffer)[3];
+ 					((uint32*) target)[4] = ((uint32*) buffer)[4];
+ 					((uint32*) target)[5] = ((uint32*) buffer)[5];
+ 					((uint32*) target)[6] = ((uint32*) buffer)[6];
+ 					((uint32*) target)[7] = ((uint32*) buffer)[7];
+ 					target += 32;
+ 					buffer += 32;
+ 				}
 #endif
 #else
 				target[0] = buffer[0];
