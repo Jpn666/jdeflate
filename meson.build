@@ -100,13 +100,13 @@ if target_machine.system() in ['windows', 'cygwin']
   extraargs += ['-DJDEFLATE_DLL']
 endif
 
-common = {'include_directories': include_directories('.'), 'dependencies': deps, 'compile_args': extraargs}
+common = {'include_directories': include_directories('.'), 'dependencies': deps}
 if meson.is_subproject()
   if get_option('default_library') == 'static'
     jdeflate_dep = declare_dependency(link_with: lib.get_static_lib(), kwargs: common)
   endif
   if get_option('default_library') == 'shared'
-    jdeflate_dep = declare_dependency(link_with: lib.get_shared_lib(), kwargs: common)
+    jdeflate_dep = declare_dependency(link_with: lib.get_shared_lib(), kwargs: common, compile_args: extraargs)
   endif
 endif
 
