@@ -66,7 +66,8 @@ typedef enum {
 } eINFLTError;
 
 
-/* Public struct, this struct is mirrored internally in inflator.c */
+/* Public struct.
+ * This struct is mirrored internally in inflator.c. */
 struct TInflator {
 	/* fields state and error must match TStateHeader layout */
 	const uint32 state;
