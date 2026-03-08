@@ -60,8 +60,8 @@ struct TZStrmPrvt {
 	/* custom allocator */
 	const struct TAllocator* allctr;
 
-	/* single IO bufffer */
-	uint8 iobuffer[1];
+	/* single IO buffer */
+	uint8 iobuffer[IOBFFRSIZE];
 };
 
 
@@ -82,7 +82,6 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 {
 	uint32 smode;
 	uint32 stype;
-	uintxx n;
 	struct TZStrmPrvt* zstrm;
 
 	smode = flags & ZSTRM_MODEMASK;
@@ -118,8 +117,7 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 		allctr = ctb_getdefaultallocator();
 	}
 
-	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
-	zstrm = allctr->request(n, allctr->user);
+	zstrm = allctr->request(sizeof(struct TZStrmPrvt), allctr->user);
 	if (zstrm == NULL) {
 		return NULL;
 	}
@@ -188,7 +186,7 @@ zstrm_destroy(const TZStrm* state)
 		deflator_destroy(zstrm->defltr);
 	}
 
-	n = sizeof(struct TZStrmPrvt) + IOBFFRSIZE;
+	n = sizeof(struct TZStrmPrvt);
 	zstrm->allctr->dispose(zstrm, n, zstrm->allctr->user);
 }
 
