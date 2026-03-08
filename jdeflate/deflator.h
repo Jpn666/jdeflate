@@ -76,7 +76,7 @@ typedef enum {
 } eDEFLTFlags;
 
 
-/* Public struct */
+/* Public struct, this struct is mirrored internally in deflator.c */
 struct TDeflator {
 	/* fields state and error must match TStateHeader layout */
 	const uint32 state;
