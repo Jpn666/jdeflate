@@ -24,7 +24,7 @@
  * Usage:
  * do {
  *     ...read a chunk of data into source buffer
-  *     if (...no more input)
+ *     if (...no more input)
  *         final = 1;
  *     deflator_setsrc(state, source, sourcesize);
  *     do {
