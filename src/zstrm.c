@@ -1137,7 +1137,7 @@ dochunk(struct TZStrmPrvt* zstrm, uintxx flush, const uint8* source, uintxx n)
 		}
 	} while (result == DEFLT_TGTEXHSTD);
 
-	updatechecksums(zstrm, source, deflator_srcend(defltr));
+	updatechecksums(zstrm, source, n);
 }
 
 static uintxx
