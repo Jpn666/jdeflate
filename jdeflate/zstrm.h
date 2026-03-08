@@ -103,7 +103,9 @@ typedef intxx (*TZStrmOFn)(const uint8* buffer, uintxx size, void* user);
 
 /* Public state */
 struct TZStrm {
-	/* state */
+	/* here we don't use const fields like in the inflator and deflator structs
+	 * because the user should not modify these fields directly, we use a 
+	 * const struct to prevent that. */
 	uint32 state;
 	uint32 error;
 	uint32 flags;
