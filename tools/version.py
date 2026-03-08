@@ -48,7 +48,8 @@ if __name__ == "__main__":
             version = validate(v)
             if version:
                 print(version)
-            print("0.0.0")
+            else:
+                print("0.0.0")
         except IOError:
             print(version)
     else:
