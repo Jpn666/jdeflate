@@ -68,7 +68,7 @@ typedef enum {
 
 /* Public struct */
 struct TInflator {
-	/* state */
+	/* fields state and error must match TStateHeader layout */
 	const uint32 state;
 	const uint32 error;
 	const uint32 flags;
@@ -148,12 +148,12 @@ inflator_setsrc(TInflator* state, const uint8* source, uintxx size)
 
 	if (CTB_EXPECT0(state->finalinput)) {
 		if (state->error == 0) {
-			struct TNonConstInflator {
+			struct TStateHeader {
 				uint32 state;
 				uint32 error;
 			}* p;
 
-			p = (struct TNonConstInflator*) state;
+			p = (struct TStateHeader*) state;
 			p->error = INFLT_EINCORRECTUSE;
 			p->state = 0xDEADBEEF;
 		}
