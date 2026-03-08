@@ -163,7 +163,7 @@ void zstrm_settargetfn(const TZStrm*, TZStrmOFn fn, void* user);
  * This function can be used to provide a custom dictionary for the
  * compression or decompression process. */
 JDEFLATE_API
-void zstrm_setdctn(const TZStrm*, const uint8* dict, uintxx size);
+void zstrm_setdctnr(const TZStrm*, const uint8* dict, uintxx size);
 
 /*
  * Decompresses up to n bytes of data into the target buffer. The size of the

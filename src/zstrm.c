@@ -323,7 +323,7 @@ static uintxx parsehead(struct TZStrmPrvt*);
 
 
 void
-zstrm_setdctn(const TZStrm* state, const uint8* dict, uintxx size)
+zstrm_setdctnr(const TZStrm* state, const uint8* dict, uintxx size)
 {
 	struct TZStrmPrvt* zstrm;
 	CTB_ASSERT(state && dict && size);
