@@ -8,7 +8,12 @@
 
 ---
 
-`Jdeflate` is a compact, stream-focused compression library that offers a simplified interface. It compresses and decompresses data in a stream format, facilitating efficient handling of large datasets. It doesn't replace the comprehensive capabilities of more established libraries such as **zLib**. Nonetheless, this library has the potential to satisfy certain use cases typically addressed by similar libraries while maintaining a clean API and predictable performance.
+
+`Jdeflate` is a compact, stream-focused compression library that offers a simplified interface. It compresses and decompresses data in a stream format, facilitating efficient handling of large datasets.
+
+The library is designed around the principle that **deflate is a balanced compression method** — it is not intended to compete with fast compression libraries like [LZ4](https://lz4.github.io/lz4/) or [Snappy](https://google.github.io/snappy/). Those libraries are built from the ground up for speed, with entropy coding, hash tables, and match formats all optimized for that goal. Trying to replicate that inside the deflate format is fighting the spec — the format overhead, the Huffman coding requirement, and the match encoding are all constraints that work against extreme speed.
+
+For that reason, Jdeflate does not implement a "fast" compression mode. At that extreme, a deflate implementation would produce output slower than LZ4 with worse ratio than its own level 1 — serving nobody well. If your use case requires fast compression, use a library designed for it. 
 
 ---
 
