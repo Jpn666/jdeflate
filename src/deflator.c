@@ -318,9 +318,9 @@ allocateextra(struct TDEFLTPrvt* state)
 #define MAXMATCH 258
 
 #if defined(CTB_ENV64)
-	#define WNDNGUARDSZ (264 + (sizeof(uint64) * (4 + 1)))
+	#define WNDNGUARDSIZE (264 + (sizeof(uint64) * (4 + 1)))
 #else
-	#define WNDNGUARDSZ (260 + (sizeof(uint32) * (4 + 1)))
+	#define WNDNGUARDSIZE (260 + (sizeof(uint32) * (4 + 1)))
 #endif
 
 static uintxx
@@ -340,7 +340,7 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 	PRVT->stats  = NULL;
 	PRVT->extra  = NULL;
 
-	wnsize = GETWNBFFSZ(meminfo) + WNDNGUARDSZ;
+	wnsize = GETWNBFFSZ(meminfo) + WNDNGUARDSIZE;
 	lzsize = GETLZBFFSZ(meminfo);
 	if (lzsize == 1) {
 		lzsize--;
@@ -351,7 +351,7 @@ allocatemem(struct TDEFLTPrvt* state, uintxx meminfo)
 		return 0;
 	}
 	PRVT->window    = buffer;
-    PRVT->windowend = PRVT->window + (wnsize - WNDNGUARDSZ);
+    PRVT->windowend = PRVT->window + (wnsize - WNDNGUARDSIZE);
 	if (PRVT->level == 0) {
 		return 1;
 	}
@@ -494,7 +494,7 @@ deflator_reset(TDeflator* state)
 	}
 
 	buffer = PRVT->window;
-	for (end = PRVT->windowend + WNDNGUARDSZ; buffer < end;) {
+	for (end = PRVT->windowend + WNDNGUARDSIZE; buffer < end;) {
 		*buffer++ = 0;
 	}
 	PRVT->inputend = PRVT->window;
@@ -528,7 +528,7 @@ deflator_destroy(TDeflator* state)
 		uintxx sz1;
 		uintxx sz2;
 
-		sz1 = GETWNBFFSZ(meminfo) + WNDNGUARDSZ;
+		sz1 = GETWNBFFSZ(meminfo) + WNDNGUARDSIZE;
 		sz2 = GETLZBFFSZ(meminfo);
 
 		if (PRVT->lzlist) {
@@ -541,7 +541,7 @@ deflator_destroy(TDeflator* state)
 	a->dispose(PRVT, sizeof(struct TDEFLTPrvt), a->user);
 }
 
-#undef WNDNGUARDSZ
+#undef WNDNGUARDSIZE
 
 #undef GETWINBFFSZ
 #undef GETTKNBFFSZ
@@ -788,7 +788,7 @@ L_ERROR:
 #define BLOCKDNMC 2
 
 
-#define MAXSTRDSZ 0x8000
+#define MAXSTRDSIZE 0xFFFF
 
 static uint32
 compress0(struct TDEFLTPrvt* state)
@@ -811,7 +811,7 @@ L_LOOP:
 	outputleft = (uintxx) (PRVT->windowend - PRVT->inputend);
 	sourceleft = (uintxx) (PBLC->send - PBLC->source);
 
-	maxrun = MAXSTRDSZ - PRVT->aux1;
+	maxrun = MAXSTRDSIZE - PRVT->aux1;
 	if (maxrun > outputleft)
 		maxrun = outputleft;
 	if (maxrun > sourceleft)
@@ -828,7 +828,7 @@ L_LOOP:
 		}
 	}
 	else {
-		if (PRVT->aux1 < MAXSTRDSZ) {
+		if (PRVT->aux1 < MAXSTRDSIZE) {
 			PRVT->substate = 0;
 			return DEFLT_SRCEXHSTD;
 		}
