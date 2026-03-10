@@ -115,6 +115,9 @@ zstrm_create(uintxx flags, intxx level, const TAllocator* allctr)
 
 	if (allctr == NULL) {
 		allctr = ctb_getdefaultallocator();
+		if (allctr == NULL) {
+			return NULL;
+		}
 	}
 
 	zstrm = allctr->request(sizeof(struct TZStrmPrvt), allctr->user);

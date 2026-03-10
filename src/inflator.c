@@ -165,7 +165,10 @@ inflator_create(uintxx flags, const TAllocator* allctr)
 
 	n = sizeof(struct TINFLTPrvt) + WNDWSIZE + 32;
 	if (allctr == NULL) {
-		allctr = (const void*) ctb_getdefaultallocator();
+		allctr = ctb_getdefaultallocator();
+		if (allctr == NULL) {
+			return NULL;
+		}
 	}
 
 	state = allctr->request(n, allctr->user);
