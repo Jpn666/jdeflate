@@ -632,7 +632,6 @@ endstream(struct TDEFLTPrvt* state)
 
 	if (PRVT->blockinit == 1) {
 		if (tryflushbits(PRVT) == 0) {
-			PRVT->substate = 1;
 			return DEFLT_TGTEXHSTD;
 		}
 		PRVT->blockinit++;
