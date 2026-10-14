@@ -159,7 +159,7 @@ void deflator_reset(TDeflator*);
 CTB_INLINE void
 deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 {
-	CTB_ASSERT(state && source && size);
+	CTB_ASSERT(state);
 
 	if (CTB_EXPECT0(state->flush)) {
 		if (state->error == 0) {
@@ -175,6 +175,13 @@ deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 		return;
 	}
 
+	if (size == 0) {
+		/* safely handle zero-length input without asserting */
+		state->source = state->sbgn = state->send = source;
+		return;
+	}
+
+	CTB_ASSERT(source);
 	state->source = state->sbgn = state->send = source;
 	state->send  += size;
 }
@@ -182,10 +189,15 @@ deflator_setsrc(TDeflator* state, const uint8* source, uintxx size)
 CTB_INLINE void
 deflator_settgt(TDeflator* state, uint8* target, uintxx size)
 {
-	CTB_ASSERT(state && target && size);
+	CTB_ASSERT(state);
 
 	state->target = state->tbgn = state->tend = target;
-	state->tend  += size;
+	if (size == 0) {
+		return;
+	}
+
+	CTB_ASSERT(target);
+	state->tend += size;
 }
 
 CTB_INLINE uintxx
