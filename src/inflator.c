@@ -1039,7 +1039,7 @@ L_STATE3:
 #define scindex PRVT->aux3
 
 CTB_INLINE uint32
-readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
+readlengths(struct TINFLTPrvt* state, uintxx total, uint16* lengths)
 {
 	uint32 e;
 	uintxx length;
@@ -1051,7 +1051,7 @@ readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
 		{0x07, 0x0b}
 	};
 
-	while (scindex < n) {
+	while (scindex < total) {
 		uint32 sl;
 		uint32 ln;
 
@@ -1100,7 +1100,7 @@ readlengths(struct TINFLTPrvt* state, uintxx n, uint16* lengths)
 			length = 0;
 		}
 
-		if (scindex + replen > DEFLT_DMAXSYMBOL + DEFLT_LMAXSYMBOL) {
+		if (scindex + replen > total) {
 			SETERROR(INFLT_EBADTREE);
 			return INFLT_ERROR;
 		}
