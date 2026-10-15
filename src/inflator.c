@@ -403,7 +403,7 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 	sinfo = dstinfo;
 	switch (mode) {
-		case LTABLEMODE: mbits = LROOTBITS; sinfo = lnsinfo - 256; break;
+		case LTABLEMODE: mbits = LROOTBITS; sinfo = lnsinfo; break;
 		case DTABLEMODE: mbits = DROOTBITS; break;
 		default:
 			mbits = CROOTBITS;
@@ -527,20 +527,20 @@ buildtable(uint16* lengths, uintxx n, uint32* table, uintxx mode)
 
 		if (mode == DTABLEMODE || symbol >= 256) {
 			if (symbol == 256) {
-				e = TAG_END;
+				e = TAG_END | (uint32) length;
 			}
 			else {
-				e = sinfo[symbol];
-			}
-
-			if (mode == LTABLEMODE) {
-				if (symbol < 286) {
-					e |= (uint32) length;
+				if (mode == LTABLEMODE) {
+					e = sinfo[symbol - 256];
+					if (symbol < 286) {
+						e |= (uint32) length;
+					}
 				}
-			}
-			else {
-				if (symbol < 30) {
-					e |= (uint32) length;
+				else {
+					e = sinfo[symbol];
+					if (symbol < 30) {
+						e |= (uint32) length;
+					}
 				}
 			}
 		}
